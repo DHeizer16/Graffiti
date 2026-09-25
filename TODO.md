@@ -180,3 +180,19 @@ This document tracks planned development phases and architecture enhancements fo
   - Added automated Docker container healthcheck probe in `docker-compose.yml` (`curl -f http://localhost:8080/health || exit 1`) with `curl` baked into runtime container.
   - Implemented OpenTelemetry-compatible `CanvasMetrics` tracking `canvas.pixels.placed`, `canvas.batches.flushed`, `canvas.signalr.active_connections`, and `canvas.batch_writer.duration_ms`.
   - Exposed live system metrics endpoint (`GET /api/canvas/telemetry`) reporting active connections, lifetime session placements, and server uptime.
+- [ ] **GitHub Actions CI/CD Pipeline (`.github/workflows/ci.yml`)**:
+  - Continuous integration workflow that automatically triggers on every push and pull request to `main`.
+  - Automatically executes `dotnet restore`, `dotnet build`, `dotnet test GlobalGraffitiWall.sln`, and verifies `docker build`.
+  - Displays build and test pass status badges on the GitHub repository.
+
+---
+
+## 7. Community Sharing & Real-Time Presence
+- [ ] **Canvas Region Snapshot & PNG Export (`GET /api/canvas/export`)**:
+  - High user value for community sharing.
+  - Export any custom bounding box or private studio canvas directly to a downloadable `.png` image or data URL.
+  - Allows painters to export their art, share on social media, or back up studio canvases.
+- [ ] **Live Multi-User Painter Presence & Cursors**:
+  - Stream real-time remote painter cursor coordinates and active color reticles over SignalR to other users viewing the same canvas region.
+  - Enhances multiplayer vibe coding feel with visual indicator tags of active painters.
+
