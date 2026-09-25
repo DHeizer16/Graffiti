@@ -198,4 +198,28 @@ This document tracks planned development phases and architecture enhancements fo
   - Stream real-time remote painter cursor coordinates and active color reticles over SignalR to other users viewing the same canvas region.
   - Enhances multiplayer vibe coding feel with visual indicator tags of active painters.
 
+---
+
+## 8. Live Public Deployment & Production Hosting Guide (Going Live Online)
+- [ ] **Public Production Hosting & Deployment Runbook (`DEPLOYMENT.md`)**:
+  - **Cloud Hosting & Infrastructure Strategy**:
+    - **Option A (Recommended & Cost-Effective: Single-Node VPS)**: Deploy via Docker Compose on a $5–$15/mo Linux VPS (Hetzner, DigitalOcean Droplet, Linode, AWS EC2 t4g, or Azure B2s) with 2–4 GB RAM.
+    - **Option B (Fully Managed Cloud / Serverless)**: Azure Container Apps or AWS ECS with Azure SQL Database / Amazon RDS and Azure Cache for Redis.
+  - **Automated SSL/TLS & Reverse Proxy Configuration**:
+    - Add a lightweight reverse proxy (Caddy or Nginx) to `docker-compose.prod.yml` with automatic HTTPS via Let's Encrypt.
+    - Configure WebSocket proxy headers (`Connection: Upgrade`, `Upgrade: websocket`) with infinite keep-alive timeouts for persistent SignalR streaming.
+  - **Production Hardening & Network Security**:
+    - Lock down Docker network: Bind Redis (`6379`) and SQL Server (`1433`) strictly to internal bridge network (`graffiti-net`); only expose ports 80/443 to the public internet.
+    - Production environment configuration (`.env.production`): Generate cryptographically secure `SA_PASSWORD`, 512-bit `JwtSettings:SecretKey`, and disable development swagger in production.
+    - CORS Policy Hardening: Restrict allowed origins in `Program.cs` from open `AllowAnyOrigin` to the verified production domain and subdomains.
+    - Configure UFW / cloud security groups allowing only SSH (port 22), HTTP (port 80), and HTTPS (port 443).
+  - **Cloudflare CDN, DDoS Protection & WebSocket Proxy**:
+    - Set up free Cloudflare proxy for DNS, Web Application Firewall (WAF), global edge caching for static assets (`/index.html`, `/css`, `/js`), and L3/L4/L7 DDoS mitigation.
+    - Enable Cloudflare WebSockets toggle and configure `X-Forwarded-For` / `CF-Connecting-IP` real IP forwarding for rate limiting and shadow banning.
+  - **High-Concurrency Live Audience Tuning**:
+    - Configure SignalR Redis Backplane (`AddStackExchangeRedis`) to allow horizontal multi-instance scaling when user traffic surges.
+    - Linux kernel TCP & socket tuning (`sysctl net.core.somaxconn=4096`, `nofile=65536`) to handle 5,000+ simultaneous painters without WebSocket connection drops.
+    - Provide a complete, copy-pasteable step-by-step checklist from clean server to live public URL in `DEPLOYMENT.md`.
+
+
 
