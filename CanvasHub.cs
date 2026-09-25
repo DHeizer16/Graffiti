@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using StackExchange.Redis;
+using GlobalGraffitiWall.API.Telemetry;
 
 namespace GlobalGraffitiWall.API;
 
@@ -54,6 +55,7 @@ public class CanvasHub : Hub
     private readonly CanvasRepository _repository;
     private readonly WallService _wallService;
     private readonly PaletteService _paletteService;
+    private readonly CanvasMetrics _metrics;
 
     public CanvasHub(
         IConnectionMultiplexer redis,
@@ -63,6 +65,7 @@ public class CanvasHub : Hub
         CanvasRepository repository,
         WallService wallService,
         PaletteService paletteService,
+        CanvasMetrics metrics,
         ILogger<CanvasHub> logger,
         IConfiguration configuration)
     {
@@ -73,6 +76,7 @@ public class CanvasHub : Hub
         _repository = repository;
         _wallService = wallService;
         _paletteService = paletteService;
+        _metrics = metrics;
         _logger = logger;
         _maxCapacity = configuration.GetValue<double>("CanvasSettings:MaxCapacity", 16);
         _refillRate = configuration.GetValue<double>("CanvasSettings:RefillRatePerSecond", 0.2);
@@ -80,10 +84,17 @@ public class CanvasHub : Hub
 
     public override async Task OnConnectedAsync()
     {
+        _metrics.IncrementConnection();
         string? wallIdStr = Context.GetHttpContext()?.Request.Query["wallId"].ToString();
         string groupName = GetGroupName(wallIdStr);
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
         await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        _metrics.DecrementConnection();
+        await base.OnDisconnectedAsync(exception);
     }
 
     public async Task JoinWall(string? wallIdStr)
@@ -260,6 +271,7 @@ public class CanvasHub : Hub
         {
             // Mutate Redis Byte Buffer atomically via Lua
             await UpdateRedisPixelBufferAsync(db, stateKey, minimapKey, wallWidth, x, y, colorId);
+            _metrics.RecordPixelPlaced(wallGuid?.ToString() ?? "Global");
 
             if (!_queue.TryEnqueue(item))
             {

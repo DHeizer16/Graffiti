@@ -11,6 +11,7 @@ public class CanvasController : ControllerBase
     private readonly CanvasRepository _repository;
     private readonly WallService _wallService;
     private readonly PaletteService _paletteService;
+    private readonly GlobalGraffitiWall.API.Telemetry.CanvasMetrics _metrics;
 
     private const string CanvasRedisKey = "canvas:global_state";
     private const string CanvasMinimapRedisKey = "canvas:minimap_overview";
@@ -68,12 +69,23 @@ public class CanvasController : ControllerBase
         IConnectionMultiplexer redis,
         CanvasRepository repository,
         WallService wallService,
-        PaletteService paletteService)
+        PaletteService paletteService,
+        GlobalGraffitiWall.API.Telemetry.CanvasMetrics metrics)
     {
         _redis = redis;
         _repository = repository;
         _wallService = wallService;
         _paletteService = paletteService;
+        _metrics = metrics;
+    }
+
+    /// <summary>
+    /// Retrieves live server telemetry metrics (active SignalR connections, placements, flushes, uptime).
+    /// </summary>
+    [HttpGet("telemetry")]
+    public IActionResult GetTelemetry()
+    {
+        return Ok(_metrics.GetSummary());
     }
 
     /// <summary>

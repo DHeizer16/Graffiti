@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using GlobalGraffitiWall.API.Telemetry;
 
 namespace GlobalGraffitiWall.API;
 
@@ -6,6 +7,7 @@ public class PixelBatchWriterService : BackgroundService
 {
     private readonly PixelPlacementQueue _queue;
     private readonly CanvasRepository _repository;
+    private readonly CanvasMetrics _metrics;
     private readonly ILogger<PixelBatchWriterService> _logger;
 
     private const int MaxBatchSize = 1000;
@@ -14,10 +16,12 @@ public class PixelBatchWriterService : BackgroundService
     public PixelBatchWriterService(
         PixelPlacementQueue queue,
         CanvasRepository repository,
+        CanvasMetrics metrics,
         ILogger<PixelBatchWriterService> logger)
     {
         _queue = queue;
         _repository = repository;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -98,6 +102,7 @@ public class PixelBatchWriterService : BackgroundService
             var sw = Stopwatch.StartNew();
             await _repository.BulkInsertPixelPlacementsAsync(batch);
             sw.Stop();
+            _metrics.RecordBatchFlushed(batch.Count, sw.Elapsed.TotalMilliseconds);
             _logger.LogDebug("Bulk inserted {Count} pixel placements in {ElapsedMs}ms.", batch.Count, sw.ElapsedMilliseconds);
         }
         catch (Exception ex)

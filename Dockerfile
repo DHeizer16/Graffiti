@@ -14,6 +14,9 @@ RUN dotnet publish "GlobalGraffitiWall.API.csproj" -c Release -o /app/publish /p
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
+# Install curl for container healthcheck probes
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # In .NET 8 and 9, default container HTTP port is 8080
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080

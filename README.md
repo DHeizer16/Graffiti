@@ -125,6 +125,12 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 - `POST /api/reservations`: Reserve a rectangular territory.
 - `DELETE /api/reservations/{id}`: Release a reserved zone early.
 
+### Health Checks & Telemetry
+- `GET /health`: Comprehensive JSON health report for Redis and SQL Server with round-trip query latency.
+- `GET /health/ready`: Readiness probe for container orchestration.
+- `GET /health/live`: Lightweight liveness probe for process responsiveness.
+- `GET /api/canvas/telemetry`: Real-time session telemetry (active SignalR connections, placements, uptime).
+
 ---
 
 ## Getting Started

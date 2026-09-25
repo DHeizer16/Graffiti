@@ -168,6 +168,10 @@ This document tracks planned development phases and architecture enhancements fo
 - [ ] **Automated Test Suite**:
   - Unit tests for 8-bit byte manipulation, bitwise calculations, and rate limit token calculations.
   - Integration tests for SignalR pixel broadcasting and Redis state consistency.
-- [ ] **Health Checks & Telemetry**:
-  - Add ASP.NET Core Health Checks for Redis and SQL Server connectivity (`/health`).
-  - Add OpenTelemetry metrics for active SignalR connections, placements per second, and database latency.
+- [x] **Health Checks & Telemetry**:
+  - Implemented ASP.NET Core Health Checks for Redis (`RedisHealthCheck`) and SQL Server (`SqlServerHealthCheck`) with round-trip query latency and error capture.
+  - Formatted developer-friendly JSON output (`HealthCheckResponseWriter`) served at `/health` and `/health/ready`.
+  - Added fast liveness probe at `/health/live` for process responsiveness.
+  - Added automated Docker container healthcheck probe in `docker-compose.yml` (`curl -f http://localhost:8080/health || exit 1`) with `curl` baked into runtime container.
+  - Implemented OpenTelemetry-compatible `CanvasMetrics` tracking `canvas.pixels.placed`, `canvas.batches.flushed`, `canvas.signalr.active_connections`, and `canvas.batch_writer.duration_ms`.
+  - Exposed live system metrics endpoint (`GET /api/canvas/telemetry`) reporting active connections, lifetime session placements, and server uptime.

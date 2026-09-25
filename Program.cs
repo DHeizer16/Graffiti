@@ -1,8 +1,11 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
 using GlobalGraffitiWall.API;
+using GlobalGraffitiWall.API.HealthChecks;
+using GlobalGraffitiWall.API.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +65,11 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(redisConnectionString));
 
 // Canvas Infrastructure & Security
+builder.Services.AddSingleton<CanvasMetrics>();
+builder.Services.AddHealthChecks()
+    .AddCheck<RedisHealthCheck>("redis", tags: ["ready"])
+    .AddCheck<SqlServerHealthCheck>("sqlserver", tags: ["ready"]);
+
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<CanvasRepository>();
 builder.Services.AddSingleton<ModerationService>();
@@ -89,6 +97,21 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 app.MapControllers();
+
+// Health Check Endpoints
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
+});
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
 
 // SignalR Hub Endpoint
 app.MapHub<CanvasHub>("/hubs/canvas");
