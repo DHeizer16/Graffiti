@@ -159,8 +159,12 @@ This document tracks planned development phases and architecture enhancements fo
 ---
 
 ## 6. DevOps, Resilience & Testing
-- [ ] **Containerization & Docker Compose**:
-  - Create a `docker-compose.yml` defining Redis, SQL Server (with initial schema migration scripts), and the API service for 1-command startup.
+- [x] **Containerization & Docker Compose (1-Command Startup)**:
+  - Multi-stage `Dockerfile` targeting .NET 9 SDK (build) and ASP.NET Core 9 (runtime) with layer caching and lean deployment footprint.
+  - Complete `docker-compose.yml` orchestrating Redis 7, SQL Server 2022, automated database migration runner, and API services with health checks and bridge networking (`graffiti-net`).
+  - Automated SQL migration runner (`entrypoint-migrations.sh`) applying `000_init_database.sql` through `004_create_canvas_palette.sql` in strict dependency order before API launch.
+  - Self-healing startup schema checks in `CanvasInitializerService` (`EnsureBaseSchemaAsync`, `EnsureShadowBanSchemaAsync`, `EnsureReservationSchemaAsync`, etc.).
+  - Configurable `.env.example` and `.dockerignore` for environment port and secret customization.
 - [ ] **Automated Test Suite**:
   - Unit tests for 8-bit byte manipulation, bitwise calculations, and rate limit token calculations.
   - Integration tests for SignalR pixel broadcasting and Redis state consistency.

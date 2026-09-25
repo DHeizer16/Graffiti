@@ -129,20 +129,49 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: 1-Command Startup with Docker Compose (Recommended)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bash
+# Clone the repository
+git clone https://github.com/DHeizer16/Graffiti.git
+cd Graffiti
+
+# Start all services (Redis, SQL Server with automated migrations, and API)
+docker compose up -d --build
+```
+
+Navigate to `http://localhost:5217` in your browser.
+
+- **Redis**: Automatically provisioned with persistence on port `6379`.
+- **SQL Server**: Automatically initialized with database `Graffiti` and all 5 migration scripts applied in dependency order.
+- **API**: ASP.NET Core 9 container running on port `5217`.
+
+To stop services:
+```bash
+docker compose down
+```
+
+---
+
+### Option 2: Local Development Setup (.NET 9 SDK)
+
+#### Prerequisites
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - [Redis](https://redis.io/) running on `localhost:6379`
-- [Microsoft SQL Server](https://www.microsoft.com/sql-server) running on `localhost` with database `GlobalGraffitiWall`
+- [Microsoft SQL Server](https://www.microsoft.com/sql-server) running on `localhost`
 
-### Database Setup
+#### Database Setup
 Execute the SQL migration scripts located in `Scripts/` in order:
-1. `Scripts/001_create_shadow_bans.sql`
-2. `Scripts/002_create_canvas_reservations.sql`
-3. `Scripts/003_create_canvas_walls.sql`
+1. `Scripts/000_init_database.sql`
+2. `Scripts/001_create_shadow_bans.sql`
+3. `Scripts/002_create_canvas_reservations.sql`
 4. `Scripts/003_create_users_table.sql`
-5. `Scripts/004_create_canvas_palette.sql`
+5. `Scripts/003_create_canvas_walls.sql`
+6. `Scripts/004_create_canvas_palette.sql`
 
-### Build & Run
+#### Build & Run
 ```bash
 # Build solution
 dotnet build

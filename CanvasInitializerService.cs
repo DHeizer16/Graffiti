@@ -35,7 +35,10 @@ public class CanvasInitializerService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // 0. Ensure schema exists and load active shadow bans, reservations, walls, and palette
+        // 0. Ensure complete database schema exists and load active services
+        await _repository.EnsureBaseSchemaAsync();
+        await _repository.EnsureShadowBanSchemaAsync();
+        await _repository.EnsureReservationSchemaAsync();
         await _repository.EnsureUserSchemaAsync();
         await _repository.EnsureWallSchemaAsync();
         await _repository.EnsurePaletteSchemaAsync();

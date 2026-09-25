@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/Debug
+**/Release
+**/*.user
+**/*.suo
+**/*.log
+**/.DS_Store

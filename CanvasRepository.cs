@@ -216,6 +216,75 @@ public class CanvasRepository
     }
 
     /// <summary>
+    /// Ensures that the primary pixel_placements table and its indexes exist.
+    /// </summary>
+    public async Task EnsureBaseSchemaAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'pixel_placements')
+            BEGIN
+                CREATE TABLE pixel_placements (
+                    placement_id BIGINT IDENTITY(1,1) PRIMARY KEY,
+                    placed_at DATETIMEOFFSET NOT NULL,
+                    x INT NOT NULL,
+                    y INT NOT NULL,
+                    color_id TINYINT NOT NULL,
+                    user_id UNIQUEIDENTIFIER NOT NULL,
+                    ip_address VARCHAR(45) NULL,
+                    is_shadow_banned BIT NOT NULL DEFAULT 0,
+                    wall_id UNIQUEIDENTIFIER NULL
+                );
+
+                CREATE NONCLUSTERED INDEX IX_pixel_placements_time_spatial 
+                ON pixel_placements (placed_at ASC, x ASC, y ASC) 
+                INCLUDE (color_id, user_id, is_shadow_banned, wall_id);
+
+                CREATE NONCLUSTERED INDEX IX_pixel_placements_user 
+                ON pixel_placements (user_id, placed_at);
+
+                CREATE NONCLUSTERED INDEX IX_pixel_placements_wall_id 
+                ON pixel_placements (wall_id, is_shadow_banned, placed_at);
+            END
+            """;
+        await db.ExecuteAsync(sql);
+    }
+
+    /// <summary>
+    /// Ensures that the shadow_bans table and is_shadow_banned column exist.
+    /// </summary>
+    public async Task EnsureShadowBanSchemaAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'pixel_placements' AND COLUMN_NAME = 'is_shadow_banned'
+            )
+            BEGIN
+                ALTER TABLE pixel_placements 
+                ADD is_shadow_banned BIT NOT NULL CONSTRAINT DF_pixel_placements_is_shadow_banned DEFAULT 0;
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'shadow_bans')
+            BEGIN
+                CREATE TABLE shadow_bans (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    identifier NVARCHAR(100) NOT NULL,
+                    ban_type NVARCHAR(20) NOT NULL,
+                    reason NVARCHAR(255) NULL,
+                    banned_by NVARCHAR(100) NULL,
+                    banned_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+                    is_active BIT NOT NULL DEFAULT 1
+                );
+
+                CREATE INDEX IX_shadow_bans_identifier ON shadow_bans(identifier, is_active);
+            END
+            """;
+        await db.ExecuteAsync(sql);
+    }
+
+    /// <summary>
     /// Ensures the canvas_reservations table exists.
     /// </summary>
     public async Task EnsureReservationSchemaAsync()
