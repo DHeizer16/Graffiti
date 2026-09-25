@@ -1,6 +1,35 @@
-@GlobalGraffitiWall.API_HostAddress = http://localhost:5217
+@Host = http://localhost:5217
 
-GET {{GlobalGraffitiWall.API_HostAddress}}/weatherforecast/
+### Comprehensive Health Check (JSON report with Redis & SQL Server latency)
+GET {{Host}}/health
 Accept: application/json
 
-###
+### Readiness Probe
+GET {{Host}}/health/ready
+Accept: application/json
+
+### Liveness Probe
+GET {{Host}}/health/live
+
+### Live Server Telemetry (Active SignalR Connections, Placements, Uptime)
+GET {{Host}}/api/canvas/telemetry
+Accept: application/json
+
+### Active Color Palette (32 Curated Painting Colors)
+GET {{Host}}/api/canvas/palette?activeOnly=true
+Accept: application/json
+
+### Full 256-Color Palette
+GET {{Host}}/api/canvas/palette
+Accept: application/json
+
+### Minimap 160x160 Binary Overview Buffer (25.6 KB)
+GET {{Host}}/api/canvas/minimap
+
+### Active Territory Reservations
+GET {{Host}}/api/reservations/active
+Accept: application/json
+
+### Public Canvas Wall Studios Directory
+GET {{Host}}/api/walls
+Accept: application/json

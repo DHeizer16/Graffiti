@@ -16,8 +16,6 @@ public class CanvasController : ControllerBase
     private const string CanvasRedisKey = "canvas:global_state";
     private const string CanvasMinimapRedisKey = "canvas:minimap_overview";
     private const int Width = 10000;
-    private const int TileSize = 256;
-    private const int TilesPerRow = 40; // Math.Ceiling(10000 / 256.0)
 
     // Atomic 2D Tile Extraction Lua Script (8-bit 1-byte per pixel, 64 KB per 256x256 tile)
     private const string GetTileLuaScript = """
@@ -171,37 +169,6 @@ public class CanvasController : ControllerBase
         return File(buffer, "application/octet-stream");
     }
 
-    [HttpGet("buffer")]
-    public async Task<IActionResult> GetCanvasBuffer([FromQuery] int startByte = 0, [FromQuery] int length = 100_000_000, [FromQuery] Guid? wallId = null)
-    {
-        int maxBytes = 100_000_000;
-        string key = CanvasRedisKey;
-
-        if (wallId != null)
-        {
-            var wall = await _repository.GetWallByIdAsync(wallId.Value);
-            if (wall == null) return NotFound(new { message = "Wall not found." });
-            maxBytes = wall.Width * wall.Height;
-            key = _wallService.GetStateKey(wallId);
-            await _wallService.EnsureWallBufferAsync(wall);
-        }
-
-        if (startByte < 0 || startByte >= maxBytes || length <= 0)
-        {
-            return BadRequest("Invalid startByte or length parameters.");
-        }
-
-        int endByte = Math.Min(startByte + length - 1, maxBytes - 1);
-        if (endByte < startByte)
-        {
-            return File(Array.Empty<byte>(), "application/octet-stream");
-        }
-
-        var db = _redis.GetDatabase();
-        byte[] buffer = (byte[]?)await db.StringGetRangeAsync(key, startByte, endByte) ?? Array.Empty<byte>();
-
-        return File(buffer, "application/octet-stream");
-    }
 
     /// <summary>
     /// Returns inspection details for a pixel coordinate on the global canvas or a private wall.

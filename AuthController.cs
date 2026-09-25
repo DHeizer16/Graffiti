@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GlobalGraffitiWall.API;

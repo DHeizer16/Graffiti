@@ -278,7 +278,7 @@ public class CanvasHub : Hub
                 await _queue.EnqueueAsync(item);
             }
 
-            // Broadcast to the specific wall group (or all if global)
+            // Broadcast to the specific wall group (wall:global or wall:{wallId})
             string groupName = wallGuid != null ? $"wall:{wallGuid.Value}" : "wall:global";
             await Clients.Group(groupName).SendAsync("PixelUpdated", new
             {
@@ -289,17 +289,6 @@ public class CanvasHub : Hub
                 wallId = wallGuid
             });
 
-            if (wallGuid == null)
-            {
-                await Clients.All.SendAsync("PixelUpdated", new
-                {
-                    x,
-                    y,
-                    colorId,
-                    timestamp = placedAt,
-                    wallId = (Guid?)null
-                });
-            }
 
             _logger.LogInformation("Pixel placed at ({X}, {Y}) on wall {Wall} by {User}", x, y, wallGuid?.ToString() ?? "Global", userKeyIdentifier);
         }

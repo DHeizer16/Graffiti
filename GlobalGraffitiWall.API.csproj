@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <Compile Remove="GlobalGraffitiWall.Tests\**" />
+    <Content Remove="GlobalGraffitiWall.Tests\**" />
     <None Remove="GlobalGraffitiWall.Tests\**" />
   </ItemGroup>
 
