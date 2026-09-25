@@ -22,5 +22,10 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="GlobalGraffitiWall.Tests\**" />
+    <None Remove="GlobalGraffitiWall.Tests\**" />
+  </ItemGroup>
+
 
 </Project>

@@ -187,3 +187,11 @@ dotnet run
 ```
 
 Navigate to `http://localhost:5217` in your browser.
+
+#### Running Tests
+The repository includes a comprehensive xUnit test suite covering coordinate math, token bucket rate-limiting, spatial collisions, cryptographic security, and palette validation:
+
+```bash
+# Run all automated unit tests
+dotnet test GlobalGraffitiWall.sln
+```

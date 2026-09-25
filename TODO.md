@@ -165,9 +165,14 @@ This document tracks planned development phases and architecture enhancements fo
   - Automated SQL migration runner (`entrypoint-migrations.sh`) applying `000_init_database.sql` through `004_create_canvas_palette.sql` in strict dependency order before API launch.
   - Self-healing startup schema checks in `CanvasInitializerService` (`EnsureBaseSchemaAsync`, `EnsureShadowBanSchemaAsync`, `EnsureReservationSchemaAsync`, etc.).
   - Configurable `.env.example` and `.dockerignore` for environment port and secret customization.
-- [ ] **Automated Test Suite**:
-  - Unit tests for 8-bit byte manipulation, bitwise calculations, and rate limit token calculations.
-  - Integration tests for SignalR pixel broadcasting and Redis state consistency.
+- [x] **Automated Test Suite (xUnit & FluentAssertions)**:
+  - Created `GlobalGraffitiWall.Tests` test project structured in `GlobalGraffitiWall.sln`.
+  - Comprehensive unit test coverage across 4 core domains (62 passed tests in 212ms):
+    - **Coordinate Math & Viewport**: 8-bit row-major indexing (`(y * Width) + x`), boundary condition testing (`(0,0)`, `(9999,9999)`), $160 \times 160$ minimap coordinate mapping, and $256 \times 256$ 2D tile chunk coverage (40 tiles/axis = 1,600 total chunks).
+    - **Rate Limiting & Token Bucket Math**: Fractional refill rates (1 charge / 5s), capacity capping at 16 tokens, burst deduction, cooldown wait calculation, and bonus balance fallback logic.
+    - **Spatial Collisions & Territory Protection**: Comprehensive rectangle intersection logic (`Overlaps`), interior point containment (`Contains`), inclusive coordinate dimension boundaries (`x2 - x1 + 1`), and expiration evaluation.
+    - **Security & Cryptography**: PBKDF2 SHA-256 password hashing with 100,000 iterations, unique 128-bit salt generation, case sensitivity, constant-time comparison, and malformed input resilience.
+    - **Color Palette & Active Flags**: Hex format validation, $O(1)$ constant-time active bit flag indexing, and sort order preservation.
 - [x] **Health Checks & Telemetry**:
   - Implemented ASP.NET Core Health Checks for Redis (`RedisHealthCheck`) and SQL Server (`SqlServerHealthCheck`) with round-trip query latency and error capture.
   - Formatted developer-friendly JSON output (`HealthCheckResponseWriter`) served at `/health` and `/health/ready`.
