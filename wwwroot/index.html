@@ -270,8 +270,8 @@
         .audit-details { display: flex; flex-direction: column; flex: 1; font-family: monospace; gap: 2px; }
         .audit-meta { color: #888; font-size: 0.85em; }
 
-        /* Reservation, Zones, Auth & Walls Modal UI */
-        #reservation-modal, #zones-modal, #auth-modal, #walls-modal {
+        /* Reservation, Zones, Auth, Walls & Export Modal UI */
+        #reservation-modal, #zones-modal, #auth-modal, #walls-modal, #export-modal {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);
             display: flex; justify-content: center; align-items: center; z-index: 100;
@@ -618,6 +618,7 @@
             <button id="tool-reserve" class="btn tool-btn" style="color: #00E5FF; border-color: #005577;" title="Reserve Territory [Hotkey: Shift+R]">📐 Reserve</button>
             <button id="tool-zones" class="btn tool-btn" title="Active Territories & Keys [Hotkey: Z]">🏰 Zones</button>
             <button id="tool-walls" class="btn tool-btn" style="color: #BA68C8; border-color: #6A1B9A;" title="Canvas Walls & Private Studios [Hotkey: Shift+W]">🖼️ Walls</button>
+            <button id="tool-export" class="btn tool-btn" style="color: #00E676; border-color: #007733;" title="Snapshot & Export PNG [Hotkey: Shift+E]">📷 Export</button>
             <button id="tool-mod" class="btn tool-btn" style="color: #FF5252; border-color: #552222; display: none;" title="Moderation & Shadow-Ban Controls [Hotkey: Shift+M]">🛡️ Mod</button>
             <button id="tool-account" class="btn tool-btn" style="color: #FFD700; border-color: #775500;" title="Painter Account & Profiles [Hotkey: U]">👤 <span id="tool-account-text">Account</span></button>
         </div>
@@ -966,9 +967,97 @@
         </div>
     </div>
 
+    <!-- Snapshot & Export PNG Modal -->
+    <div id="export-modal" style="display: none;">
+        <div class="res-modal-card" style="width: 560px;">
+            <div class="res-header" style="border-color: #007733; background: #0f2216;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">📷</span>
+                    <span style="font-weight: bold; font-size: 1.05em; color: #00E676;">Snapshot & Export PNG</span>
+                </div>
+                <button id="export-close-btn" class="inspect-close-btn" title="Close (Esc)">✕</button>
+            </div>
+
+            <div class="res-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 230, 118, 0.08); border: 1px solid rgba(0, 230, 118, 0.25); border-radius: 6px; padding: 10px 14px;">
+                    <div>
+                        <div style="font-size: 0.78em; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px;">Active Canvas Source</div>
+                        <div style="font-weight: bold; color: #00E676; font-size: 1.05em;" id="export-source-name">Global Wall</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.78em; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px;">Canvas Dimensions</div>
+                        <div style="font-family: monospace; color: #fff; font-size: 0.95em;" id="export-source-dims">10,000 × 10,000 px</div>
+                    </div>
+                </div>
+
+                <!-- Scope Preset Selector -->
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label style="font-size: 0.82em; color: #bbb;">Export Scope Preset:</label>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                        <button type="button" class="btn export-preset-btn btn-active" data-preset="full" id="export-preset-full">🖼️ Full Canvas</button>
+                        <button type="button" class="btn export-preset-btn" data-preset="viewport" id="export-preset-viewport">👀 Viewport View</button>
+                        <button type="button" class="btn export-preset-btn" data-preset="custom" id="export-preset-custom">📐 Custom Region</button>
+                    </div>
+                </div>
+
+                <!-- Coordinates & Dimensions -->
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 0.75em; color: #aaa;">Start X</label>
+                        <input type="number" id="export-x" class="btn" style="text-align: center; padding: 6px;" value="0" min="0">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 0.75em; color: #aaa;">Start Y</label>
+                        <input type="number" id="export-y" class="btn" style="text-align: center; padding: 6px;" value="0" min="0">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 0.75em; color: #aaa;">Width (px)</label>
+                        <input type="number" id="export-w" class="btn" style="text-align: center; padding: 6px;" value="1000" min="1" max="4000">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <label style="font-size: 0.75em; color: #aaa;">Height (px)</label>
+                        <input type="number" id="export-h" class="btn" style="text-align: center; padding: 6px;" value="1000" min="1" max="4000">
+                    </div>
+                </div>
+
+                <!-- Scale Multiplier Selector -->
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label style="font-size: 0.82em; color: #bbb;">Pixel Scale Multiplier (Crisp Retro Art):</label>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+                        <button type="button" class="btn export-scale-btn" data-scale="1" id="export-scale-1">1x <span style="font-size: 0.75em; color: #888;">(1:1)</span></button>
+                        <button type="button" class="btn export-scale-btn" data-scale="2" id="export-scale-2">2x <span style="font-size: 0.75em; color: #888;">(HD)</span></button>
+                        <button type="button" class="btn export-scale-btn btn-active" data-scale="4" id="export-scale-4">4x <span style="font-size: 0.75em; font-weight: bold; color: #00E676;">(Best)</span></button>
+                        <button type="button" class="btn export-scale-btn" data-scale="8" id="export-scale-8">8x <span style="font-size: 0.75em; color: #888;">(Ultra)</span></button>
+                    </div>
+                </div>
+
+                <!-- Export Live Stats Pill -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #111; border: 1px dashed #334433; border-radius: 6px; padding: 8px 12px; font-size: 0.82em;">
+                    <div style="color: #aaa;">
+                        Output Dimensions: <strong id="export-calc-dims" style="color: #00E676; font-family: monospace;">4,000 × 4,000 px</strong>
+                    </div>
+                    <div style="color: #aaa;">
+                        Format: <strong style="color: #fff;">8-Bit Indexed PNG</strong>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                    <button type="button" id="export-cancel-btn" class="btn" style="padding: 8px 18px;">
+                        Cancel
+                    </button>
+                    <button type="button" id="export-download-btn" class="btn btn-active" style="background: #00E676 !important; color: #000 !important; font-weight: bold; padding: 9px 24px; font-size: 0.9em;">
+                        💾 Download PNG
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="canvas-viewport">
         <canvas id="wall"></canvas>
     </div>
+
 
     <script>
         const API_BASE_URL = window.location.origin.startsWith("http") ? window.location.origin : "http://localhost:5217";
@@ -1192,6 +1281,22 @@
         const wallCreateKey = document.getElementById("wall-create-key");
         const wallCreateMsg = document.getElementById("wall-create-msg");
         const wallCreateSubmit = document.getElementById("wall-create-submit");
+
+        // Snapshot & Export PNG Modal Elements
+        const toolExportBtn = document.getElementById("tool-export");
+        const exportModal = document.getElementById("export-modal");
+        const exportCloseBtn = document.getElementById("export-close-btn");
+        const exportCancelBtn = document.getElementById("export-cancel-btn");
+        const exportDownloadBtn = document.getElementById("export-download-btn");
+        const exportSourceName = document.getElementById("export-source-name");
+        const exportSourceDims = document.getElementById("export-source-dims");
+        const exportXInput = document.getElementById("export-x");
+        const exportYInput = document.getElementById("export-y");
+        const exportWInput = document.getElementById("export-w");
+        const exportHInput = document.getElementById("export-h");
+        const exportCalcDims = document.getElementById("export-calc-dims");
+        let currentExportScale = 4;
+        let currentExportPreset = "full";
 
         // Controls
         const timeSlider = document.getElementById("time-slider");
@@ -3419,6 +3524,16 @@
                 closeZonesModal();
                 closeAuthModal();
                 closeWallsModal();
+                closeExportModal();
+                return;
+            }
+
+            if (e.shiftKey && e.key.toUpperCase() === 'E') {
+                if (exportModal && exportModal.style.display === "flex") {
+                    closeExportModal();
+                } else {
+                    openExportModal();
+                }
                 return;
             }
 
@@ -4391,6 +4506,131 @@
         if (wallCreateSubmit) {
             wallCreateSubmit.addEventListener("click", submitCreateWall);
         }
+
+        // =========================================================================
+        // Canvas PNG & Region Export Controller
+        // =========================================================================
+        function updateExportCalculations() {
+            if (!exportXInput || !exportWInput) return;
+            const w = Math.max(1, parseInt(exportWInput.value) || 1);
+            const h = Math.max(1, parseInt(exportHInput.value) || 1);
+            const outW = w * currentExportScale;
+            const outH = h * currentExportScale;
+            if (exportCalcDims) {
+                exportCalcDims.innerText = `${outW.toLocaleString()} × ${outH.toLocaleString()} px`;
+            }
+        }
+
+        function setExportPreset(preset) {
+            currentExportPreset = preset;
+            document.querySelectorAll(".export-preset-btn").forEach(b => {
+                b.classList.toggle("btn-active", b.getAttribute("data-preset") === preset);
+            });
+
+            if (preset === "full") {
+                exportXInput.value = 0;
+                exportYInput.value = 0;
+                if (activeWallId && activeWallData) {
+                    exportWInput.value = activeWallData.width;
+                    exportHInput.value = activeWallData.height;
+                } else {
+                    exportWInput.value = Math.min(2000, WORLD_WIDTH);
+                    exportHInput.value = Math.min(2000, WORLD_HEIGHT);
+                }
+            } else if (preset === "viewport") {
+                const rx = Math.max(0, Math.floor(-cameraX / zoom));
+                const ry = Math.max(0, Math.floor(-cameraY / zoom));
+                const rw = Math.min(WORLD_WIDTH - rx, Math.max(1, Math.ceil((window.innerWidth - cameraX) / zoom) - rx));
+                const rh = Math.min(WORLD_HEIGHT - ry, Math.max(1, Math.ceil((window.innerHeight - cameraY) / zoom) - ry));
+                exportXInput.value = rx;
+                exportYInput.value = ry;
+                exportWInput.value = Math.min(4000, rw);
+                exportHInput.value = Math.min(4000, rh);
+            }
+            updateExportCalculations();
+        }
+
+        function openExportModal() {
+            if (!exportModal) return;
+            if (exportSourceName) {
+                exportSourceName.innerText = activeWallData ? activeWallData.name : "Global Wall";
+            }
+            if (exportSourceDims) {
+                exportSourceDims.innerText = `${WORLD_WIDTH.toLocaleString()} × ${WORLD_HEIGHT.toLocaleString()} px`;
+            }
+            setExportPreset(currentExportPreset || "full");
+            exportModal.style.display = "flex";
+        }
+
+        function closeExportModal() {
+            if (!exportModal) return;
+            exportModal.style.display = "none";
+        }
+
+        function downloadCanvasExport() {
+            const x = Math.max(0, parseInt(exportXInput.value) || 0);
+            const y = Math.max(0, parseInt(exportYInput.value) || 0);
+            const w = Math.min(4000, Math.max(1, parseInt(exportWInput.value) || 1000));
+            const h = Math.min(4000, Math.max(1, parseInt(exportHInput.value) || 1000));
+            const scale = currentExportScale || 4;
+
+            let url = `${API_BASE_URL}/api/canvas/export?x=${x}&y=${y}&width=${w}&height=${h}&scale=${scale}`;
+            if (activeWallId) {
+                url += `&wallId=${activeWallId}`;
+            }
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            statusDiv.innerText = `Exported canvas PNG (${w * scale}×${h * scale}px @ ${scale}x)`;
+            statusDiv.style.color = "#00E676";
+            closeExportModal();
+        }
+
+        // Export Modal Event Listeners
+        if (toolExportBtn) toolExportBtn.addEventListener("click", openExportModal);
+        if (exportCloseBtn) exportCloseBtn.addEventListener("click", closeExportModal);
+        if (exportCancelBtn) exportCancelBtn.addEventListener("click", closeExportModal);
+        if (exportDownloadBtn) exportDownloadBtn.addEventListener("click", downloadCanvasExport);
+
+        if (exportModal) {
+            exportModal.addEventListener("click", (e) => {
+                if (e.target === exportModal) closeExportModal();
+            });
+        }
+
+        document.querySelectorAll(".export-preset-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const preset = btn.getAttribute("data-preset");
+                setExportPreset(preset);
+            });
+        });
+
+        document.querySelectorAll(".export-scale-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll(".export-scale-btn").forEach(b => b.classList.remove("btn-active"));
+                btn.classList.add("btn-active");
+                currentExportScale = parseInt(btn.getAttribute("data-scale")) || 4;
+                updateExportCalculations();
+            });
+        });
+
+        [exportXInput, exportYInput, exportWInput, exportHInput].forEach(inp => {
+            if (inp) {
+                inp.addEventListener("input", () => {
+                    document.querySelectorAll(".export-preset-btn").forEach(b => b.classList.remove("btn-active"));
+                    const customBtn = document.getElementById("export-preset-custom");
+                    if (customBtn) customBtn.classList.add("btn-active");
+                    currentExportPreset = "custom";
+                    updateExportCalculations();
+                });
+            }
+        });
+
 
         // Startup Boot
         async function init() {

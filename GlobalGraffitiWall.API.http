@@ -33,3 +33,7 @@ Accept: application/json
 ### Public Canvas Wall Studios Directory
 GET {{Host}}/api/walls
 Accept: application/json
+
+### Canvas Region PNG Export (8-Bit Indexed PNG @ 4x Scale)
+GET {{Host}}/api/canvas/export?x=0&y=0&width=200&height=200&scale=4
+

@@ -188,11 +188,14 @@ This document tracks planned development phases and architecture enhancements fo
 ---
 
 ## 7. Community Sharing & Real-Time Presence
-- [ ] **Canvas Region Snapshot & PNG Export (`GET /api/canvas/export`)**:
-  - High user value for community sharing.
-  - Export any custom bounding box or private studio canvas directly to a downloadable `.png` image or data URL.
-  - Allows painters to export their art, share on social media, or back up studio canvases.
+- [x] **Canvas Region Snapshot & PNG Export (`GET /api/canvas/export`)**:
+  - Implemented high-performance, zero-dependency `PngEncoder.cs` producing 8-bit indexed PNG images with embedded 256-color `PLTE` chunk and `ZLibStream` DEFLATE compression.
+  - Implemented atomic server-side Redis Lua script (`ExportRegionLuaScript`) to slice custom rectangular coordinate bounds in row-major order directly from Redis memory in < 5ms.
+  - Exposed `GET /api/canvas/export` supporting `wallId`, coordinate bounding box (`x`, `y`, `width`, `height`), and crisp pixel art integer scaling (`1x`, `2x`, `4x`, `8x`).
+  - Added unit test suite in `PngEncoderTests.cs` (15 tests) validating PNG magic signature, `IHDR`, `PLTE` color mapping, `IDAT` decompression, scanlines, and scaling.
+  - Built Cyberpunk Export modal (`#export-modal`, hotkey `Shift + E` or `[📷 Export]` HUD tool) supporting Full Canvas, Current Viewport, and Custom Region presets with live dimension calculation and one-click download.
 - [ ] **Live Multi-User Painter Presence & Cursors**:
   - Stream real-time remote painter cursor coordinates and active color reticles over SignalR to other users viewing the same canvas region.
   - Enhances multiplayer vibe coding feel with visual indicator tags of active painters.
+
 

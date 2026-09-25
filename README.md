@@ -105,6 +105,7 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 ### Canvas & Tiles
 - `GET /api/canvas/tile?tx={tx}&ty={ty}&wallId={wallId}`: Stream $256 \times 256$ binary chunk (64 KB).
 - `GET /api/canvas/minimap?wallId={wallId}`: Fetch $160 \times 160$ minimap buffer (25.6 KB).
+- `GET /api/canvas/export?x={x}&y={y}&width={w}&height={h}&scale={s}&wallId={id}`: Export full canvas or custom region as downloadable 8-bit indexed PNG image with crisp retro scaling (1x to 16x).
 - `GET /api/canvas/pixel-info?x={x}&y={y}&wallId={wallId}`: Detailed coordinate history, author, and timestamp.
 - `GET /api/canvas/palette`: Returns all 256 palette colors.
 - `GET /api/canvas/palette?activeOnly=true`: Returns the 32 currently active colors.

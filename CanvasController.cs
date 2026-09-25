@@ -63,6 +63,43 @@ public class CanvasController : ControllerBase
         return table.concat(chunks)
         """;
 
+    // Atomic Canvas Region Slicing Lua Script (extracts rw x rh rectangle in row-major order)
+    private const string ExportRegionLuaScript = """
+        local key = KEYS[1]
+        local rx = tonumber(ARGV[1])
+        local ry = tonumber(ARGV[2])
+        local rw = tonumber(ARGV[3])
+        local rh = tonumber(ARGV[4])
+        local world_width = tonumber(ARGV[5]) or 10000
+        local world_height = tonumber(ARGV[6]) or 10000
+
+        local chunks = {}
+        for r = 0, rh - 1 do
+            local y = ry + r
+            if y < world_height then
+                local start_byte = (y * world_width) + rx
+                local row_end_byte = (y * world_width) + world_width - 1
+                local fetch_end_byte = math.min(start_byte + rw - 1, row_end_byte)
+
+                if start_byte <= row_end_byte then
+                    local row_data = redis.call('GETRANGE', key, start_byte, fetch_end_byte)
+                    local fetched_len = #row_data
+                    if fetched_len < rw then
+                        row_data = row_data .. string.rep("\0", rw - fetched_len)
+                    end
+                    table.insert(chunks, row_data)
+                else
+                    table.insert(chunks, string.rep("\0", rw))
+                end
+            else
+                table.insert(chunks, string.rep("\0", rw))
+            end
+        end
+
+        return table.concat(chunks)
+        """;
+
+
     public CanvasController(
         IConnectionMultiplexer redis,
         CanvasRepository repository,
@@ -167,6 +204,65 @@ public class CanvasController : ControllerBase
         }
 
         return File(buffer, "application/octet-stream");
+    }
+
+    /// <summary>
+    /// Exports a canvas wall or custom bounding box as a downloadable PNG image.
+    /// Supports pixel scaling (1x to 16x) for crisp pixel art snapshots.
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> ExportCanvas(
+        [FromQuery] int? x = null,
+        [FromQuery] int? y = null,
+        [FromQuery] int? width = null,
+        [FromQuery] int? height = null,
+        [FromQuery] int scale = 1,
+        [FromQuery] Guid? wallId = null)
+    {
+        int worldWidth = Width;
+        int worldHeight = Width;
+        string key = CanvasRedisKey;
+        string wallName = "GlobalWall";
+
+        if (wallId != null)
+        {
+            var wall = await _repository.GetWallByIdAsync(wallId.Value);
+            if (wall == null) return NotFound(new { message = "Wall not found." });
+            worldWidth = wall.Width;
+            worldHeight = wall.Height;
+            wallName = string.Join("_", wall.Name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
+            key = _wallService.GetStateKey(wallId);
+            await _wallService.EnsureWallBufferAsync(wall);
+        }
+
+        scale = Math.Clamp(scale, 1, 16);
+
+        int rx = Math.Clamp(x ?? 0, 0, worldWidth - 1);
+        int ry = Math.Clamp(y ?? 0, 0, worldHeight - 1);
+
+        int defaultW = (wallId == null) ? Math.Min(1000, worldWidth - rx) : (worldWidth - rx);
+        int defaultH = (wallId == null) ? Math.Min(1000, worldHeight - ry) : (worldHeight - ry);
+
+        int rw = Math.Clamp(width ?? defaultW, 1, Math.Min(4000, worldWidth - rx));
+        int rh = Math.Clamp(height ?? defaultH, 1, Math.Min(4000, worldHeight - ry));
+
+        if ((long)rw * scale * rh * scale > 16_000_000)
+        {
+            return BadRequest(new { message = "Export dimensions exceed maximum image size. Please reduce region size or scale." });
+        }
+
+        var db = _redis.GetDatabase();
+        RedisKey[] keys = [key];
+        RedisValue[] values = [rx.ToString(), ry.ToString(), rw.ToString(), rh.ToString(), worldWidth.ToString(), worldHeight.ToString()];
+
+        var rawResult = await db.ScriptEvaluateAsync(ExportRegionLuaScript, keys, values);
+        byte[] pixelData = (byte[]?)rawResult ?? new byte[rw * rh];
+
+        var palette = await _paletteService.GetPaletteAsync(activeOnly: false);
+        byte[] pngBytes = PngEncoder.EncodeIndexedPng(pixelData, rw, rh, palette, scale);
+
+        string filename = $"graffiti_{wallName}_{rx}_{ry}_{rw}x{rh}_{scale}x.png";
+        return File(pngBytes, "image/png", filename);
     }
 
 
