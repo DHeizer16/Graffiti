@@ -105,6 +105,10 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 ### 5. Time-Lapse & Replay
 - High-speed delta timeline scrubber (`/api/history/deltas`) with variable playback speeds (1 min/s to 1 day/s) and dual start/end time pickers.
 
+### 6. Programmatic Canvas Art Injection
+- High-speed batch injection pipeline for generating and placing pixel art masterpieces onto the live canvas without interrupting active players (demonstrated with a 16,320-pixel rendering of Vincent van Gogh's *The Starry Night*).
+- Detailed technical runbook available in [docs/STARRY_NIGHT_PIPELINE.md](docs/STARRY_NIGHT_PIPELINE.md).
+
 ---
 
 ## API Endpoints
