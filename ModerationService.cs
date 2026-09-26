@@ -10,16 +10,56 @@ public class ModerationService
 
     private const string RedisBannedIpsKey = "canvas:shadow_banned:ips";
     private const string RedisBannedUsersKey = "canvas:shadow_banned:users";
+    private const string RedisLiveCursorsEnabledKey = "canvas:live_cursors_enabled";
     private const int IpBurstThreshold = 25; // max placements per 10 seconds per IP
+
+    private volatile bool _liveCursorsEnabledCache = true;
 
     public ModerationService(
         IConnectionMultiplexer redis,
         CanvasRepository repository,
-        ILogger<ModerationService> logger)
+        ILogger<ModerationService> logger,
+        IConfiguration configuration)
     {
         _redis = redis;
         _repository = repository;
         _logger = logger;
+        _liveCursorsEnabledCache = configuration.GetValue<bool>("CanvasSettings:EnableLiveCursors", true);
+    }
+
+    /// <summary>
+    /// Checks whether live multi-user cursors are currently enabled globally.
+    /// </summary>
+    public async Task<bool> IsLiveCursorsEnabledAsync()
+    {
+        try
+        {
+            var db = _redis.GetDatabase();
+            var val = await db.StringGetAsync(RedisLiveCursorsEnabledKey);
+            if (!val.HasValue) return _liveCursorsEnabledCache;
+            return (bool)val;
+        }
+        catch
+        {
+            return _liveCursorsEnabledCache;
+        }
+    }
+
+    /// <summary>
+    /// Toggles the global live multi-user cursors feature flag at runtime across all nodes.
+    /// </summary>
+    public async Task SetLiveCursorsEnabledAsync(bool enabled)
+    {
+        _liveCursorsEnabledCache = enabled;
+        try
+        {
+            var db = _redis.GetDatabase();
+            await db.StringSetAsync(RedisLiveCursorsEnabledKey, enabled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist live cursors flag to Redis.");
+        }
     }
 
     /// <summary>

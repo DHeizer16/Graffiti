@@ -134,6 +134,26 @@ public class CanvasController : ControllerBase
     }
 
     /// <summary>
+    /// Returns current live cursor settings and feature flag status.
+    /// </summary>
+    [HttpGet("cursor-status")]
+    public async Task<IActionResult> GetCursorStatus(
+        [FromServices] ModerationService moderationService,
+        [FromServices] IConfiguration configuration)
+    {
+        bool enabled = await moderationService.IsLiveCursorsEnabledAsync();
+        int throttleMs = configuration.GetValue<int>("CanvasSettings:CursorThrottleMs", 100);
+        int maxCursors = configuration.GetValue<int>("CanvasSettings:MaxCursorsPerViewport", 25);
+        return Ok(new
+        {
+            enabled,
+            zoneSize = CanvasHub.ZoneSize,
+            throttleMs,
+            maxCursors
+        });
+    }
+
+    /// <summary>
     /// Retrieves the canvas color palette.
     /// By default returns all 256 colors, or set activeOnly=true for current painting palette.
     /// </summary>

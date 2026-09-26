@@ -253,7 +253,7 @@ This document tracks planned development phases and architecture enhancements fo
   - Exposed `GET /api/canvas/export` supporting `wallId`, coordinate bounding box (`x`, `y`, `width`, `height`), and crisp pixel art integer scaling (`1x`, `2x`, `4x`, `8x`).
   - Added unit test suite in `PngEncoderTests.cs` (15 tests) validating PNG magic signature, `IHDR`, `PLTE` color mapping, `IDAT` decompression, scanlines, and scaling.
   - Built Cyberpunk Export modal (`#export-modal`, hotkey `Shift + E` or `[📷 Export]` HUD tool) supporting Full Canvas, Current Viewport, and Custom Region presets with live dimension calculation and one-click download.
-- [ ] **Live Multi-User Painter Presence & Cursors ($500 \times 500$ Spatial Partitioning & Multi-Tier Feature Flags)**:
+- [x] **Live Multi-User Painter Presence & Cursors ($500 \times 500$ Spatial Partitioning & Multi-Tier Feature Flags)**:
   - **$500 \times 500$ Macro-Zone Spatial Partitioning**:
     - Partition the $10,000 \times 10,000$ global canvas into a $20 \times 20$ grid of 400 spatial zones (`zone:{zx}_{zy}`), cutting broadcast message fanout by 75% compared to $1,000 \times 1,000$ zones and mapping cleanly to private studios ($500 \times 500$).
     - **Viewport-Aware Subscriptions**: When $\text{zoom} \ge 1.0$, the client dynamically subscribes via SignalR (`SubscribeCursorZones` / `UnsubscribeCursorZones`) to the 1 to 4 adjacent zones touching the active screen viewport.

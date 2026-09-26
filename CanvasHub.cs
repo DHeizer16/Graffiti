@@ -16,6 +16,7 @@ public class CanvasHub : Hub
     private const string CanvasRedisKey = "canvas:global_state";
     private const string CanvasMinimapRedisKey = "canvas:minimap_overview";
     private const int Width = 10000;
+    public const int ZoneSize = 500;
 
     // Atomic Token Bucket Lua Script
     private const string RateLimitLuaScript = """
@@ -114,6 +115,98 @@ public class CanvasHub : Hub
         return (Guid.TryParse(wallIdStr, out var id) && id != Guid.Empty)
             ? $"wall:{id}"
             : "wall:global";
+    }
+
+    public static string GetCursorZoneGroupName(string? wallIdStr, int zx, int zy)
+    {
+        string wallPrefix = (Guid.TryParse(wallIdStr, out var id) && id != Guid.Empty)
+            ? $"cursor:{id}"
+            : "cursor:global";
+        return $"{wallPrefix}:{zx}_{zy}";
+    }
+
+    /// <summary>
+    /// Subscribes connection to a set of 500x500 spatial cursor zones.
+    /// </summary>
+    public async Task SubscribeCursorZones(string? wallIdStr, List<string> zoneKeys)
+    {
+        if (zoneKeys == null || zoneKeys.Count == 0) return;
+        var safeZones = zoneKeys.Take(9); // limit to prevent group flooding
+        foreach (var key in safeZones)
+        {
+            var parts = key.Split('_');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int zx) && int.TryParse(parts[1], out int zy))
+            {
+                string groupName = GetCursorZoneGroupName(wallIdStr, zx, zy);
+                await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes connection from a set of 500x500 spatial cursor zones.
+    /// </summary>
+    public async Task UnsubscribeCursorZones(string? wallIdStr, List<string> zoneKeys)
+    {
+        if (zoneKeys == null || zoneKeys.Count == 0) return;
+        foreach (var key in zoneKeys)
+        {
+            var parts = key.Split('_');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int zx) && int.TryParse(parts[1], out int zy))
+            {
+                string groupName = GetCursorZoneGroupName(wallIdStr, zx, zy);
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Broadcasts painter cursor position and selected color to players viewing the same 500x500 spatial zone.
+    /// </summary>
+    public async Task SendCursor(string? wallIdStr, int x, int y, byte colorId, string? guestHandle)
+    {
+        if (!await _moderationService.IsLiveCursorsEnabledAsync())
+        {
+            return;
+        }
+
+        if (x < 0 || y < 0) return;
+
+        int zx = x / ZoneSize;
+        int zy = y / ZoneSize;
+        string groupName = GetCursorZoneGroupName(wallIdStr, zx, zy);
+
+        bool isVerified = Context.User?.Identity?.IsAuthenticated == true;
+        string username;
+
+        if (isVerified)
+        {
+            username = Context.User?.FindFirst(ClaimTypes.Name)?.Value ?? Context.User?.Identity?.Name ?? "Painter";
+            if (!username.StartsWith('@')) username = $"@{username}";
+        }
+        else
+        {
+            var safeHandle = guestHandle?.Trim();
+            if (!string.IsNullOrEmpty(safeHandle) && safeHandle.Length <= 24)
+            {
+                username = safeHandle.StartsWith('@') ? safeHandle : $"@{safeHandle}";
+            }
+            else
+            {
+                var connIdSuffix = Context.ConnectionId.Length >= 4 ? Context.ConnectionId[^4..] : Context.ConnectionId;
+                username = $"@Guest-{connIdSuffix}";
+            }
+        }
+
+        await Clients.OthersInGroup(groupName).SendAsync("CursorMoved", new
+        {
+            connectionId = Context.ConnectionId,
+            username,
+            isVerified,
+            x,
+            y,
+            colorId
+        });
     }
 
     public Task<PlacementResult> PlacePixel(int x, int y, byte colorId)

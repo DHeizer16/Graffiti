@@ -831,6 +831,7 @@
             <button id="tool-zones" class="btn tool-btn" title="Active Territories & Keys [Hotkey: Z]">🏰 Zones</button>
             <button id="tool-walls" class="btn tool-btn" style="color: #BA68C8; border-color: #6A1B9A;" title="Canvas Walls & Private Studios [Hotkey: Shift+W]">🖼️ Walls</button>
             <button id="tool-export" class="btn tool-btn" style="color: #00E676; border-color: #007733;" title="Snapshot & Export PNG [Hotkey: Shift+E]">📷 Export</button>
+            <button id="tool-cursors" class="btn tool-btn" style="color: #FF4081; border-color: #880e4f;" title="Toggle Live Multi-User Cursors [Hotkey: Shift+P]">👥 <span id="tool-cursors-text">Cursors: ON</span></button>
             <button id="tool-mod" class="btn tool-btn" style="color: #FF5252; border-color: #552222; display: none;" title="Moderation & Shadow-Ban Controls [Hotkey: Shift+M]">🛡️ Mod</button>
             <button id="tool-account" class="btn tool-btn" style="color: #FFD700; border-color: #775500;" title="Painter Account & Profiles [Hotkey: U]">👤 <span id="tool-account-text">Account</span></button>
         </div>
@@ -952,6 +953,7 @@
                 <button id="mod-tab-audit" class="btn mod-tab-btn">Intercepted Graffiti (Audit)</button>
                 <button id="mod-tab-add" class="btn mod-tab-btn">+ Manual Ban</button>
                 <button id="mod-tab-reset" class="btn mod-tab-btn" style="display: none; border-color: #FF9800; color: #FFB74D;">⏳ Canvas Reset</button>
+                <button id="mod-tab-cursors" class="btn mod-tab-btn" style="border-color: #FF4081; color: #FF80AB;">👥 Live Cursors</button>
             </div>
 
             <div id="mod-content" class="mod-content">
@@ -1324,6 +1326,22 @@
         let activeWallData = null; // CanvasWallDto or null for Global Wall
         let activeWallPassword = null;
         const ONE_MINUTE_MS = 60 * 1000;
+
+        // Live Multi-User Painter Presence State (500x500 Macro-Zones)
+        const CURSOR_ZONE_SIZE = 500;
+        const CURSOR_MAX_VIEWPORT_ZONES = 9;
+        let liveCursorsEnabled = localStorage.getItem("graffiti_cursors_enabled") !== "false";
+        let serverCursorsEnabled = true;
+        let serverCursorThrottleMs = 100;
+        let serverMaxCursors = 25;
+        let lastSentCursorTime = 0;
+        let lastSentCursorX = -9999;
+        let lastSentCursorY = -9999;
+        let cursorSubscriptionTimer = null;
+        const currentSubscribedCursorZones = new Set();
+        const remoteCursors = new Map(); // key: connectionId -> { currentX, currentY, targetX, targetY, username, isVerified, colorId, lastUpdated, opacity: 1 }
+        const cursorPulses = []; // array of click placement shockwaves { x, y, color, startTime }
+        let cursorAnimFrame = null;
 
         const defaultPaletteColors = [
             "#FFFFFF", "#E4E4E4", "#888888", "#222222", "#FFA7D1", "#E50000", "#E59500", "#A06A42",
@@ -1752,6 +1770,9 @@
 
             setCanvasCrisp(ctx);
             render();
+            if (typeof debouncedUpdateCursorZoneSubscriptions === "function") {
+                debouncedUpdateCursorZoneSubscriptions();
+            }
         }
         window.addEventListener("resize", resizeCanvas);
 
@@ -2314,7 +2335,383 @@
 
             ctx.restore();
 
+            // Render Live Multi-User Painter Cursors & Click Pulses in Screen Space
+            if (liveCursorsEnabled && serverCursorsEnabled && zoom >= 1.0) {
+                renderRemoteCursors(ctx, dpr);
+            }
+
             renderMinimap();
+        }
+
+        // =====================================================================
+        // Live Multi-User Painter Presence & Cursors (500x500 Spatial Zones)
+        // =====================================================================
+
+        async function fetchServerCursorStatus() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/canvas/cursor-status`);
+                if (!res.ok) return;
+                const data = await res.json();
+                serverCursorsEnabled = data.enabled !== false;
+                serverCursorThrottleMs = data.throttleMs || 100;
+                serverMaxCursors = data.maxCursors || 25;
+                updateCursorToggleButtonUI();
+            } catch (e) {
+                console.warn("Failed to fetch cursor status:", e);
+            }
+        }
+
+        function toggleLiveCursors(forceState = null) {
+            liveCursorsEnabled = (forceState !== null) ? Boolean(forceState) : !liveCursorsEnabled;
+            localStorage.setItem("graffiti_cursors_enabled", liveCursorsEnabled);
+            updateCursorToggleButtonUI();
+
+            if (!liveCursorsEnabled) {
+                if (connection && connection.state === signalR.HubConnectionState.Connected && currentSubscribedCursorZones.size > 0) {
+                    connection.invoke("UnsubscribeCursorZones", activeWallId, Array.from(currentSubscribedCursorZones)).catch(() => {});
+                }
+                currentSubscribedCursorZones.clear();
+                remoteCursors.clear();
+                cursorPulses.length = 0;
+                render();
+                showCyberToast({
+                    title: "Live Cursors Disabled",
+                    message: "Remote painter cursors are hidden. Network and GPU overhead paused.",
+                    type: "info",
+                    duration: 3500
+                });
+            } else {
+                updateCursorZoneSubscriptions();
+                showCyberToast({
+                    title: "Live Cursors Enabled",
+                    message: "Streaming nearby painter cursors in 500×500 spatial zones.",
+                    type: "info",
+                    duration: 3500
+                });
+            }
+        }
+
+        function updateCursorToggleButtonUI() {
+            const btn = document.getElementById("tool-cursors");
+            const txt = document.getElementById("tool-cursors-text");
+            if (!btn || !txt) return;
+
+            if (!serverCursorsEnabled) {
+                txt.innerText = "Cursors: PAUSED";
+                btn.style.color = "#888";
+                btn.style.borderColor = "#444";
+                btn.classList.remove("btn-active");
+                btn.title = "Live Multi-User Cursors are disabled server-side by administrators.";
+            } else if (liveCursorsEnabled) {
+                txt.innerText = "Cursors: ON";
+                btn.style.color = "#FF4081";
+                btn.style.borderColor = "#880e4f";
+                btn.classList.add("btn-active");
+                btn.title = "Toggle Live Multi-User Cursors (Shift+P) [Active: 500×500 spatial streaming]";
+            } else {
+                txt.innerText = "Cursors: OFF";
+                btn.style.color = "#888";
+                btn.style.borderColor = "#444";
+                btn.classList.remove("btn-active");
+                btn.title = "Toggle Live Multi-User Cursors (Shift+P) [Currently Muted]";
+            }
+        }
+
+        function debouncedUpdateCursorZoneSubscriptions() {
+            if (cursorSubscriptionTimer) clearTimeout(cursorSubscriptionTimer);
+            cursorSubscriptionTimer = setTimeout(updateCursorZoneSubscriptions, 200);
+        }
+
+        function updateCursorZoneSubscriptions() {
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) return;
+
+            // Circuit Breaker: Zoom-out (< 1.0), user disabled, or server disabled
+            if (!liveCursorsEnabled || !serverCursorsEnabled || zoom < 1.0) {
+                if (currentSubscribedCursorZones.size > 0) {
+                    const toDrop = Array.from(currentSubscribedCursorZones);
+                    connection.invoke("UnsubscribeCursorZones", activeWallId, toDrop).catch(() => {});
+                    currentSubscribedCursorZones.clear();
+                    remoteCursors.clear();
+                    render();
+                }
+                return;
+            }
+
+            // Calculate visible bounding box in canvas coordinates
+            const minWorldX = Math.max(0, Math.floor(-cameraX / zoom));
+            const maxWorldX = Math.min(WORLD_WIDTH - 1, Math.ceil((window.innerWidth - cameraX) / zoom));
+            const minWorldY = Math.max(0, Math.floor(-cameraY / zoom));
+            const maxWorldY = Math.min(WORLD_HEIGHT - 1, Math.ceil((window.innerHeight - cameraY) / zoom));
+
+            const minZx = Math.max(0, Math.floor(minWorldX / CURSOR_ZONE_SIZE));
+            const maxZx = Math.min(Math.floor((WORLD_WIDTH - 1) / CURSOR_ZONE_SIZE), Math.floor(maxWorldX / CURSOR_ZONE_SIZE));
+            const minZy = Math.max(0, Math.floor(minWorldY / CURSOR_ZONE_SIZE));
+            const maxZy = Math.min(Math.floor((WORLD_HEIGHT - 1) / CURSOR_ZONE_SIZE), Math.floor(maxWorldY / CURSOR_ZONE_SIZE));
+
+            const desiredZones = new Set();
+            let count = 0;
+            for (let x = minZx; x <= maxZx && count < CURSOR_MAX_VIEWPORT_ZONES; x++) {
+                for (let y = minZy; y <= maxZy && count < CURSOR_MAX_VIEWPORT_ZONES; y++) {
+                    desiredZones.add(`${x}_${y}`);
+                    count++;
+                }
+            }
+
+            const toAdd = [];
+            const toRemove = [];
+
+            for (const zone of desiredZones) {
+                if (!currentSubscribedCursorZones.has(zone)) toAdd.push(zone);
+            }
+            for (const zone of currentSubscribedCursorZones) {
+                if (!desiredZones.has(zone)) toRemove.push(zone);
+            }
+
+            if (toAdd.length > 0) {
+                connection.invoke("SubscribeCursorZones", activeWallId, toAdd).catch(() => {});
+                toAdd.forEach(z => currentSubscribedCursorZones.add(z));
+            }
+            if (toRemove.length > 0) {
+                connection.invoke("UnsubscribeCursorZones", activeWallId, toRemove).catch(() => {});
+                toRemove.forEach(z => currentSubscribedCursorZones.delete(z));
+            }
+        }
+
+        function queueOutgoingCursor(worldX, worldY) {
+            if (!liveCursorsEnabled || !serverCursorsEnabled || zoom < 1.0) return;
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) return;
+
+            // 2-pixel deadband check
+            const distSq = (worldX - lastSentCursorX) ** 2 + (worldY - lastSentCursorY) ** 2;
+            if (distSq < 4) return; // Math.hypot < 2px
+
+            const now = Date.now();
+            if (now - lastSentCursorTime < serverCursorThrottleMs) return;
+
+            lastSentCursorTime = now;
+            lastSentCursorX = worldX;
+            lastSentCursorY = worldY;
+
+            const guestHandle = currentUserProfile ? currentUserProfile.username : (storedUserNickname || `Guest-${(storedUserId || "").substring(0, 4)}`);
+            connection.invoke("SendCursor", activeWallId, worldX, worldY, selectedColorId, guestHandle).catch(() => {});
+        }
+
+        function handleRemoteCursorMoved(data) {
+            if (!liveCursorsEnabled || !serverCursorsEnabled || zoom < 1.0) return;
+
+            // Crowd Density Cap
+            if (remoteCursors.size >= serverMaxCursors && !remoteCursors.has(data.connectionId)) {
+                let oldestKey = null, oldestTime = Infinity;
+                for (const [key, c] of remoteCursors.entries()) {
+                    if (c.lastUpdated < oldestTime) {
+                        oldestTime = c.lastUpdated;
+                        oldestKey = key;
+                    }
+                }
+                if (oldestKey) remoteCursors.delete(oldestKey);
+            }
+
+            const existing = remoteCursors.get(data.connectionId);
+            const now = Date.now();
+            if (existing) {
+                existing.targetX = data.x;
+                existing.targetY = data.y;
+                existing.colorId = data.colorId;
+                existing.lastUpdated = now;
+                existing.opacity = 1;
+            } else {
+                remoteCursors.set(data.connectionId, {
+                    currentX: data.x,
+                    currentY: data.y,
+                    targetX: data.x,
+                    targetY: data.y,
+                    username: data.username || "Painter",
+                    isVerified: Boolean(data.isVerified),
+                    colorId: data.colorId,
+                    lastUpdated: now,
+                    opacity: 1
+                });
+            }
+            startCursorAnimationLoop();
+        }
+
+        function handleLiveCursorsToggled(enabled) {
+            serverCursorsEnabled = Boolean(enabled);
+            updateCursorToggleButtonUI();
+            if (!serverCursorsEnabled) {
+                remoteCursors.clear();
+                cursorPulses.length = 0;
+                render();
+                showCyberToast({
+                    title: "Live Cursors Paused by Admin",
+                    message: "Server administrators have temporarily paused multi-user cursor streaming for crowd control.",
+                    type: "info",
+                    duration: 8000
+                });
+            } else {
+                updateCursorZoneSubscriptions();
+                showCyberToast({
+                    title: "Live Cursors Resumed",
+                    message: "Live multi-user painter presence is now active.",
+                    type: "info",
+                    duration: 5000
+                });
+            }
+            if (modModal && modModal.style.display === "flex") {
+                renderModCursorsTab();
+            }
+        }
+
+        function startCursorAnimationLoop() {
+            if (cursorAnimFrame) return;
+            function animStep() {
+                if (remoteCursors.size > 0 || cursorPulses.length > 0) {
+                    render();
+                    cursorAnimFrame = requestAnimationFrame(animStep);
+                } else {
+                    cursorAnimFrame = null;
+                    render(); // final clean frame
+                }
+            }
+            cursorAnimFrame = requestAnimationFrame(animStep);
+        }
+
+        function renderRemoteCursors(ctx, dpr) {
+            const now = Date.now();
+            const toDelete = [];
+
+            // 1. Render Click Placement Shockwave Pulses
+            for (let i = cursorPulses.length - 1; i >= 0; i--) {
+                const p = cursorPulses[i];
+                const elapsed = now - p.startTime;
+                if (elapsed > 500) {
+                    cursorPulses.splice(i, 1);
+                    continue;
+                }
+                const progress = elapsed / 500;
+                const radius = (2 + progress * 24) * dpr;
+                const alpha = (1 - progress) * 0.85;
+                const sx = (p.x * zoom + cameraX) * dpr;
+                const sy = (p.y * zoom + cameraY) * dpr;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+                ctx.strokeStyle = p.color;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth = Math.max(1, 2.5 * dpr);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 2. Render Remote Cursors
+            for (const [connId, c] of remoteCursors.entries()) {
+                const elapsed = now - c.lastUpdated;
+                if (elapsed > 3000) {
+                    c.opacity = Math.max(0, 1 - (elapsed - 3000) / 1000);
+                }
+                if (c.opacity <= 0 && elapsed > 4500) {
+                    toDelete.push(connId);
+                    continue;
+                }
+
+                // Smooth linear interpolation (lerp)
+                c.currentX += (c.targetX - c.currentX) * 0.35;
+                c.currentY += (c.targetY - c.currentY) * 0.35;
+
+                // Screen coordinates in physical device pixels
+                const sx = (c.currentX * zoom + cameraX) * dpr;
+                const sy = (c.currentY * zoom + cameraY) * dpr;
+
+                // Frustum culling
+                if (sx < -100 * dpr || sx > canvas.width + 100 * dpr || sy < -100 * dpr || sy > canvas.height + 100 * dpr) {
+                    continue;
+                }
+
+                const cursorColor = paletteColors[c.colorId] || "#00E5FF";
+
+                ctx.save();
+                ctx.globalAlpha = c.opacity;
+
+                // A. Sleek Neon Arrow Pointer Reticle
+                ctx.translate(sx, sy);
+                ctx.shadowColor = cursorColor;
+                ctx.shadowBlur = 8 * dpr;
+                ctx.fillStyle = cursorColor;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, 16 * dpr);
+                ctx.lineTo(4.5 * dpr, 12 * dpr);
+                ctx.lineTo(8.5 * dpr, 19 * dpr);
+                ctx.lineTo(11.5 * dpr, 17.5 * dpr);
+                ctx.lineTo(7.5 * dpr, 10.5 * dpr);
+                ctx.lineTo(13 * dpr, 10.5 * dpr);
+                ctx.closePath();
+                ctx.fill();
+
+                // Crisp white inner accent
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#FFFFFF";
+                ctx.beginPath();
+                ctx.moveTo(1.5 * dpr, 2.5 * dpr);
+                ctx.lineTo(1.5 * dpr, 11 * dpr);
+                ctx.lineTo(4 * dpr, 8.5 * dpr);
+                ctx.lineTo(6.5 * dpr, 13 * dpr);
+                ctx.lineTo(8 * dpr, 12 * dpr);
+                ctx.lineTo(5.5 * dpr, 7.5 * dpr);
+                ctx.lineTo(9 * dpr, 7.5 * dpr);
+                ctx.closePath();
+                ctx.fill();
+
+                // B. Floating Handle Badge
+                const badgeText = c.username || "Painter";
+                const fontSize = Math.round(11 * dpr);
+                ctx.font = `bold ${fontSize}px monospace`;
+                const textWidth = ctx.measureText(badgeText).width;
+                const verifiedWidth = c.isVerified ? (14 * dpr) : 0;
+                const badgeW = textWidth + verifiedWidth + (26 * dpr);
+                const badgeH = 18 * dpr;
+                const badgeX = 14 * dpr;
+                const badgeY = 12 * dpr;
+
+                // Badge background pill
+                ctx.fillStyle = "rgba(10, 14, 23, 0.92)";
+                ctx.strokeStyle = cursorColor;
+                ctx.lineWidth = 1 * dpr;
+                ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+                ctx.shadowBlur = 6 * dpr;
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4 * dpr);
+                } else {
+                    ctx.rect(badgeX, badgeY, badgeW, badgeH);
+                }
+                ctx.fill();
+                ctx.stroke();
+
+                // Active Color Swatch Dot
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = cursorColor;
+                ctx.beginPath();
+                ctx.arc(badgeX + 8 * dpr, badgeY + badgeH / 2, 3.5 * dpr, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Username Label
+                ctx.fillStyle = "#FFFFFF";
+                ctx.fillText(badgeText, badgeX + 16 * dpr, badgeY + (13 * dpr));
+
+                // Verified Checkmark Icon
+                if (c.isVerified) {
+                    ctx.fillStyle = "#00E5FF";
+                    ctx.fillText("✓", badgeX + 18 * dpr + textWidth, badgeY + (13 * dpr));
+                }
+
+                ctx.restore();
+            }
+
+            for (const key of toDelete) {
+                remoteCursors.delete(key);
+            }
         }
 
         // Navigation & Selection
@@ -2345,6 +2742,7 @@
                     hoveredPixel = { x: worldX, y: worldY };
                     render();
                 }
+                queueOutgoingCursor(worldX, worldY);
             } else if (hoveredPixel) {
                 hoveredPixel = null;
                 render();
@@ -2378,6 +2776,7 @@
 
         window.addEventListener("mouseup", () => {
             isPanning = false;
+            debouncedUpdateCursorZoneSubscriptions();
             if (isReserving && reservationDragStart && reservationDragCurrent) {
                 isReserving = false;
                 const rx1 = Math.min(reservationDragStart.x, reservationDragCurrent.x);
@@ -2412,6 +2811,7 @@
             cameraY = e.clientY - (e.clientY - cameraY) * (newZoom / zoom);
             zoom = newZoom;
             render();
+            debouncedUpdateCursorZoneSubscriptions();
         }, { passive: false });
 
         // SignalR Real-Time Sync
@@ -2461,6 +2861,17 @@
                     inspectPixel(data.x, data.y);
                 }
 
+                // Spawn click placement shockwave
+                if (liveCursorsEnabled && serverCursorsEnabled && zoom >= 1.0) {
+                    cursorPulses.push({
+                        x: data.x,
+                        y: data.y,
+                        color: paletteColors[data.colorId] || "#00E5FF",
+                        startTime: Date.now()
+                    });
+                    startCursorAnimationLoop();
+                }
+
                 if (!isHistoricalMode) render();
             });
 
@@ -2500,12 +2911,25 @@
                 handleCanvasResetExecuted(data);
             });
 
+            connection.on("CursorMoved", (data) => {
+                handleRemoteCursorMoved(data);
+            });
+
+            connection.on("LiveCursorsToggled", (data) => {
+                handleLiveCursorsToggled(data.enabled);
+            });
+
             connection.start().then(() => {
                 statusDiv.innerText = "Live Connected. Dynamic tiles active.";
                 statusDiv.style.color = "#00E5FF";
 
                 // Fetch current scheduled reset status
                 fetchResetStatus();
+
+                // Fetch server live cursor status & initialize subscriptions
+                fetchServerCursorStatus().then(() => {
+                    updateCursorZoneSubscriptions();
+                });
 
                 // Fetch initial charge status
                 connection.invoke("GetChargeStatus")
@@ -2858,6 +3282,7 @@
         const modTabAudit = document.getElementById("mod-tab-audit");
         const modTabAdd = document.getElementById("mod-tab-add");
         const modTabReset = document.getElementById("mod-tab-reset");
+        const modTabCursors = document.getElementById("mod-tab-cursors");
 
         // Canvas Reset Banner elements
         const resetBanner = document.getElementById("reset-banner");
@@ -2904,9 +3329,12 @@
         if (modTabReset) {
             modTabReset.addEventListener("click", () => switchModTab("reset"));
         }
+        if (modTabCursors) {
+            modTabCursors.addEventListener("click", () => switchModTab("cursors"));
+        }
 
         function switchModTab(tab) {
-            [modTabBans, modTabAudit, modTabAdd, modTabReset].forEach(btn => btn && btn.classList.remove("btn-active"));
+            [modTabBans, modTabAudit, modTabAdd, modTabReset, modTabCursors].forEach(btn => btn && btn.classList.remove("btn-active"));
             if (tab === "bans") {
                 modTabBans.classList.add("btn-active");
                 loadActiveBans();
@@ -2919,6 +3347,67 @@
             } else if (tab === "reset") {
                 if (modTabReset) modTabReset.classList.add("btn-active");
                 renderResetTab();
+            } else if (tab === "cursors") {
+                if (modTabCursors) modTabCursors.classList.add("btn-active");
+                renderModCursorsTab();
+            }
+        }
+
+        function renderModCursorsTab() {
+            modContent.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 14px; max-width: 520px; margin: 0 auto; padding: 10px 0;">
+                    <div style="background: rgba(255, 64, 129, 0.08); border: 1px solid rgba(255, 64, 129, 0.3); border-radius: 8px; padding: 12px 14px;">
+                        <div style="font-weight: bold; color: #FF4081; font-size: 0.95em; margin-bottom: 4px;">👥 Live Multi-User Painter Presence</div>
+                        <div style="font-size: 0.82em; color: #bbb; line-height: 1.4;">
+                            Live cursors broadcast mouse/stylus positions and active colors to players in the same 500×500 spatial zone.
+                            If server concurrency surges or you wish to freeze cursor traffic, toggle this switch.
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border: 1px solid #333; border-radius: 8px; padding: 14px 18px;">
+                        <div>
+                            <div style="font-weight: bold; font-size: 0.95em; color: #fff;">Server-Wide Cursor Streaming</div>
+                            <div id="mod-cursor-status-text" style="font-size: 0.82em; color: ${serverCursorsEnabled ? '#00E676' : '#FF5252'}; margin-top: 2px;">
+                                Status: ${serverCursorsEnabled ? 'ACTIVE (Enabled)' : 'PAUSED (Globally Disabled)'}
+                            </div>
+                        </div>
+                        <button id="mod-toggle-cursor-btn" class="btn" style="background: ${serverCursorsEnabled ? '#FF5252' : '#00E676'}; color: #000; font-weight: bold; padding: 8px 18px;">
+                            ${serverCursorsEnabled ? 'Disable Globally' : 'Enable Globally'}
+                        </button>
+                    </div>
+
+                    <div style="font-size: 0.78em; color: #777; line-height: 1.4;">
+                        ℹ️ Players also have their own client-side toggle (Shift + P) to hide cursors individually on slow or metered connections.
+                    </div>
+                </div>
+            `;
+
+            const toggleBtn = document.getElementById("mod-toggle-cursor-btn");
+            if (toggleBtn) {
+                toggleBtn.onclick = async () => {
+                    toggleBtn.disabled = true;
+                    toggleBtn.innerText = "Updating...";
+                    try {
+                        const res = await fetch(`${API_BASE_URL}/api/moderation/toggle-cursors`, {
+                            method: "POST",
+                            headers: getAuthHeaders({ "Content-Type": "application/json" }),
+                            body: JSON.stringify({ enabled: !serverCursorsEnabled })
+                        });
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const data = await res.json();
+                        serverCursorsEnabled = data.enabled;
+                        updateCursorToggleButtonUI();
+                        renderModCursorsTab();
+                        showCyberToast({
+                            title: serverCursorsEnabled ? "Live Cursors Enabled" : "Live Cursors Paused",
+                            message: `Admin successfully ${serverCursorsEnabled ? 'enabled' : 'paused'} cursor streaming globally.`,
+                            type: serverCursorsEnabled ? "success" : "info"
+                        });
+                    } catch (err) {
+                        alert("Failed to toggle cursors: " + err.message);
+                        renderModCursorsTab();
+                    }
+                };
             }
         }
 
@@ -4530,6 +5019,8 @@
         // Account & Auth Event Listeners
         if (btnAccountHud) btnAccountHud.addEventListener("click", () => openAuthModal());
         if (toolAccountBtn) toolAccountBtn.addEventListener("click", () => openAuthModal());
+        const toolCursorsBtn = document.getElementById("tool-cursors");
+        if (toolCursorsBtn) toolCursorsBtn.addEventListener("click", () => toggleLiveCursors());
         if (authCloseBtn) authCloseBtn.addEventListener("click", closeAuthModal);
         if (authProfileDoneBtn) authProfileDoneBtn.addEventListener("click", closeAuthModal);
         if (authLogoutBtn) authLogoutBtn.addEventListener("click", logoutUser);
@@ -4650,6 +5141,11 @@
                 } else {
                     openModModal();
                 }
+                return;
+            }
+
+            if (e.shiftKey && e.key.toUpperCase() === 'P') {
+                toggleLiveCursors();
                 return;
             }
 
@@ -5229,6 +5725,12 @@
             closeWallsModal();
             await loadMinimapOverview();
             await fetchTimeRange();
+
+            currentSubscribedCursorZones.clear();
+            remoteCursors.clear();
+            cursorPulses.length = 0;
+            updateCursorZoneSubscriptions();
+
             render();
 
             statusDiv.innerText = wall 
@@ -5741,6 +6243,7 @@
             loadSavedReservationKeys();
             await loadActiveReservations();
             initSignalR();
+            updateCursorToggleButtonUI();
             await fetchTimeRange();
 
             // Check for wallId URL query parameter to deep link into a studio

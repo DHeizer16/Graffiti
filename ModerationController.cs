@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace GlobalGraffitiWall.API;
 
@@ -11,13 +12,16 @@ public class ModerationController : ControllerBase
 {
     private readonly ModerationService _moderationService;
     private readonly CanvasRepository _repository;
+    private readonly IHubContext<CanvasHub> _hubContext;
 
     public ModerationController(
         ModerationService moderationService,
-        CanvasRepository repository)
+        CanvasRepository repository,
+        IHubContext<CanvasHub> hubContext)
     {
         _moderationService = moderationService;
         _repository = repository;
+        _hubContext = hubContext;
     }
 
     /// <summary>
@@ -214,6 +218,22 @@ public class ModerationController : ControllerBase
             resetBy = adminName
         });
     }
+
+    /// <summary>
+    /// Toggles live multi-user cursors on or off across all connected clients (Admin or Moderator only).
+    /// </summary>
+    [HttpPost("toggle-cursors")]
+    public async Task<IActionResult> ToggleCursors([FromBody] ToggleCursorsRequest request)
+    {
+        await _moderationService.SetLiveCursorsEnabledAsync(request.Enabled);
+        await _hubContext.Clients.All.SendAsync("LiveCursorsToggled", new { enabled = request.Enabled });
+        return Ok(new
+        {
+            success = true,
+            enabled = request.Enabled,
+            message = request.Enabled ? "Live cursors enabled globally." : "Live cursors disabled globally."
+        });
+    }
 }
 
 
@@ -221,4 +241,9 @@ public class SetRoleRequest
 {
     public string Username { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+}
+
+public class ToggleCursorsRequest
+{
+    public bool Enabled { get; set; }
 }
