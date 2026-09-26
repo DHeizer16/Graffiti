@@ -253,9 +253,31 @@ This document tracks planned development phases and architecture enhancements fo
   - Exposed `GET /api/canvas/export` supporting `wallId`, coordinate bounding box (`x`, `y`, `width`, `height`), and crisp pixel art integer scaling (`1x`, `2x`, `4x`, `8x`).
   - Added unit test suite in `PngEncoderTests.cs` (15 tests) validating PNG magic signature, `IHDR`, `PLTE` color mapping, `IDAT` decompression, scanlines, and scaling.
   - Built Cyberpunk Export modal (`#export-modal`, hotkey `Shift + E` or `[📷 Export]` HUD tool) supporting Full Canvas, Current Viewport, and Custom Region presets with live dimension calculation and one-click download.
-- [ ] **Live Multi-User Painter Presence & Cursors**:
-  - Stream real-time remote painter cursor coordinates and active color reticles over SignalR to other users viewing the same canvas region.
-  - Enhances multiplayer vibe coding feel with visual indicator tags of active painters.
+- [ ] **Live Multi-User Painter Presence & Cursors ($500 \times 500$ Spatial Partitioning & Multi-Tier Feature Flags)**:
+  - **$500 \times 500$ Macro-Zone Spatial Partitioning**:
+    - Partition the $10,000 \times 10,000$ global canvas into a $20 \times 20$ grid of 400 spatial zones (`zone:{zx}_{zy}`), cutting broadcast message fanout by 75% compared to $1,000 \times 1,000$ zones and mapping cleanly to private studios ($500 \times 500$).
+    - **Viewport-Aware Subscriptions**: When $\text{zoom} \ge 1.0$, the client dynamically subscribes via SignalR (`SubscribeCursorZones` / `UnsubscribeCursorZones`) to the 1 to 4 adjacent zones touching the active screen viewport.
+    - **Zoom-Out Circuit Breaker**: When zoomed far out ($\text{zoom} < 1.0$), cursor transmission and reception are automatically paused to conserve client GPU and network bandwidth.
+    - **Panning Debounce**: Group subscription changes are debounced by 200ms during viewport dragging to prevent SignalR group thrashing.
+  - **High-Performance Network & Latency Controls**:
+    - **10 Hz / 100ms Outgoing Throttle**: Coordinate updates are capped at 10 packets/second maximum (never 60 Hz).
+    - **2-Pixel Deadband**: Coordinates are only transmitted if the cursor has moved $\ge 2$ canvas pixels since the last packet.
+    - **Client-Side Linear Interpolation (`lerp`)**: Receiving clients smoothly interpolate cursor positions at 60 FPS on the GPU via `requestAnimationFrame` for jitter-free movement between network ticks.
+    - **Auto-Idle Fadeout**: Remote cursors smoothly fade to 0% opacity after 3 seconds of inactivity.
+    - **Crowd Density Cap**: Each client caps rendering to the top 25 most active/closest cursors in the active viewport, discarding excess traffic during crowd surges.
+  - **Multi-Tier Feature Flag Architecture**:
+    - **Server-Side Master Switch & Circuit Breaker**:
+      - Configurable in `appsettings.json` (`CanvasSettings:EnableLiveCursors: true/false`, `CursorThrottleMs: 100`, `MaxCursorsPerViewport: 25`).
+      - Runtime Admin Endpoint (`POST /api/moderation/toggle-cursors`) allowing administrators to toggle cursor streaming globally on the fly without server restarts.
+      - Admin UI toggle control embedded directly in the `[🛡️ Mod]` modal.
+    - **Client-Side Player Preference Toggle**:
+      - Top HUD / Bottom-bar toggle button: `[👥 Cursors: ON/OFF]`.
+      - Global hotkey: <kbd>Shift</kbd> + <kbd>P</kbd>.
+      - When toggled OFF, the client completely ceases sending cursor coordinates and ignores incoming cursor broadcasts (0% network and rendering overhead).
+  - **Cyberpunk Visual Presentation**:
+    - Sleek neon arrow reticle glowing with the remote painter's currently selected palette color.
+    - Floating handle pill badge showing verified handle (`@Username ✓` or `Guest-XXXX`) and an active color swatch pip.
+    - Subtle radial pulse shockwave emitted from the cursor reticle when a remote player commits a pixel placement.
 
 ---
 
