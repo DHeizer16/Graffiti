@@ -78,8 +78,34 @@ This document tracks planned development phases and architecture enhancements fo
       - One-click invite link copying (`?wallId={id}`) with deep-link auto-loading on page load.
 - [x] **Configurable Token-Bucket Rates**:
   - Moved rate-limiting capacity and refill rate to `appsettings.json` (`CanvasSettings:MaxCapacity`, `CanvasSettings:RefillRatePerSecond`).
-- [ ] **Bonus/Purchased Placement Charges**:
-  - Add API endpoints to query user balance and grant bonus pixel placement tokens.
+- [ ] **Unified Token Economy & Vault (Pixel Overdrive & Zone Reservation Leases)**:
+  - **Dual-Token Currency Model**:
+    - **Regenerating Charges (0–16)**: Standard free bucket refilling at 1 charge every 5s for rapid casual painting.
+    - **Banked Bonus Tokens**: Persistent token vault tied to authenticated user accounts (`users.bonus_tokens`) in SQL Server and cached in Redis (`user:{userId}:bonus_balance`).
+  - **Pixel Placement Overdrive**:
+    - When regular charges reach 0, painting does not halt or error; placements automatically consume banked bonus tokens (sub-millisecond Redis Lua deduction).
+    - Prevents creative flow interruptions when drawing murals or defending artwork.
+  - **Token-Funded Territory Reservation Leases (Spatial Footprint $\times$ Duration Formula)**:
+    - Replace free, unconstrained territory locking with a fair, balanced token leasing model:
+      - Formula: $\text{Token Cost} = \text{Base Fee} + \lceil \frac{\text{Width} \times \text{Height}}{\text{Area Scale}} \rceil \times \text{Duration Multiplier}$.
+      - Micro stickers ($10 \times 10$): 2 ⚡ for 15m up to 25 ⚡ for 24h.
+      - Standard murals ($32 \times 32$): 5 ⚡ for 15m up to 50 ⚡ for 24h.
+      - Large collaborative art ($64 \times 64$): 10 ⚡ for 15m up to 90 ⚡ for 24h.
+      - Guild/Clan megazones ($128 \times 128$): 20 ⚡ for 15m up to 180 ⚡ for 24h.
+    - **Dual-Pool Funding**: Quick 15m sketch shields can be funded directly with normal regenerating charges (e.g. 5 charges), while long multi-hour/24h holds require banked bonus tokens.
+    - **Early-Release Refund Incentive**: Releasing a territory early in `#zones-modal` returns a 50% prorated refund of unused time back to the owner's bonus token bank, preventing dead "ghost zones".
+    - **Territory Extension / Renewal**: Allow owners to spend tokens in `#zones-modal` to extend active territory duration before expiry.
+    - **Studio Owner Exemption**: Reservations on private studio walls remain 100% free (0 tokens) for wall owners.
+  - **Token Inflow & Acquisition Mechanisms**:
+    - **Daily Supply Drop (`POST /api/tokens/claim-daily`)**: Authenticated painters claim +25 to +50 bonus tokens once per 24 hours.
+    - **Welcome Stash**: New user registrations automatically receive +50 bonus tokens.
+    - **Promo / Voucher Codes (`POST /api/tokens/redeem`)**: Event and stream promo codes (e.g. `CYBERPUNK2026`).
+    - **Audit Ledger Table (`token_transactions`)**: Full transactional ledger logging `DAILY_CLAIM`, `WELCOME_BONUS`, `ZONE_RESERVE_DEBIT`, `ZONE_RELEASE_REFUND`, `PIXEL_OVERDRIVE_DEBIT`, and `PROMO_CODE`.
+  - **Frontend Cyberpunk HUD & Modal Integrations**:
+    - **HUD Overdrive Visuals**: Top meter displays `16/16 ⚡ (+42 Bonus)`. When regular charges deplete, the meter glows amber/gold with *"⚡ Overdrive: Using Bonus Tokens"* status.
+    - **Live Lease Cost Calculator in `#reservation-modal`**: Dynamic calculation of token cost as the user drags a selection box or changes duration, showing current balance and available tokens.
+    - **Token Vault Card in `#auth-modal`**: Balance display, pulsating `[🎁 Claim Daily Drop (+25 ⚡)]` button with live countdown timer, and promo code redemption input.
+
 
 ---
 
