@@ -78,7 +78,7 @@ This document tracks planned development phases and architecture enhancements fo
       - One-click invite link copying (`?wallId={id}`) with deep-link auto-loading on page load.
 - [x] **Configurable Token-Bucket Rates**:
   - Moved rate-limiting capacity and refill rate to `appsettings.json` (`CanvasSettings:MaxCapacity`, `CanvasSettings:RefillRatePerSecond`).
-- [ ] **Unified Token Economy & Vault (Pixel Overdrive & Zone Reservation Leases)**:
+- [x] **Unified Token Economy & Vault (Pixel Overdrive & Zone Reservation Leases)**:
   - **Dual-Token Currency Model**:
     - **Regenerating Charges (0–16)**: Standard free bucket refilling at 1 charge every 5s for rapid casual painting.
     - **Banked Bonus Tokens**: Persistent token vault tied to authenticated user accounts (`users.bonus_tokens`) in SQL Server and cached in Redis (`user:{userId}:bonus_balance`).

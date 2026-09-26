@@ -306,10 +306,23 @@ public class CanvasRepository
                     label NVARCHAR(100) NULL,
                     created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
                     expires_at DATETIMEOFFSET NOT NULL,
-                    is_active BIT NOT NULL DEFAULT 1
+                    is_active BIT NOT NULL DEFAULT 1,
+                    token_cost INT NOT NULL DEFAULT 0,
+                    refunded_tokens INT NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IX_canvas_reservations_active ON canvas_reservations(is_active, expires_at);
                 CREATE INDEX IX_canvas_reservations_owner ON canvas_reservations(owner_id, is_active);
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('canvas_reservations', 'token_cost') IS NULL
+                BEGIN
+                    ALTER TABLE canvas_reservations ADD token_cost INT NOT NULL DEFAULT 0;
+                END
+                IF COL_LENGTH('canvas_reservations', 'refunded_tokens') IS NULL
+                BEGIN
+                    ALTER TABLE canvas_reservations ADD refunded_tokens INT NOT NULL DEFAULT 0;
+                END
             END
             """;
         await db.ExecuteAsync(sql);
@@ -333,6 +346,8 @@ public class CanvasRepository
                 x2 AS X2,
                 y2 AS Y2,
                 label AS Label,
+                token_cost AS TokenCost,
+                refunded_tokens AS RefundedTokens,
                 created_at AS CreatedAt,
                 expires_at AS ExpiresAt,
                 is_active AS IsActive
@@ -351,9 +366,9 @@ public class CanvasRepository
         using IDbConnection db = new SqlConnection(_connectionString);
         const string sql = """
             INSERT INTO canvas_reservations 
-                (reservation_id, owner_id, owner_name, secret_key, x1, y1, x2, y2, label, created_at, expires_at, is_active)
+                (reservation_id, owner_id, owner_name, secret_key, x1, y1, x2, y2, label, token_cost, refunded_tokens, created_at, expires_at, is_active)
             VALUES 
-                (@ReservationId, @OwnerId, @OwnerName, @SecretKey, @X1, @Y1, @X2, @Y2, @Label, @CreatedAt, @ExpiresAt, @IsActive);
+                (@ReservationId, @OwnerId, @OwnerName, @SecretKey, @X1, @Y1, @X2, @Y2, @Label, @TokenCost, @RefundedTokens, @CreatedAt, @ExpiresAt, @IsActive);
             """;
         await db.ExecuteAsync(sql, reservation);
     }
@@ -370,6 +385,20 @@ public class CanvasRepository
             WHERE reservation_id = @ReservationId;
             """;
         await db.ExecuteAsync(sql, new { ReservationId = reservationId });
+    }
+
+    /// <summary>
+    /// Deactivates a reservation and records refunded tokens.
+    /// </summary>
+    public async Task DeactivateReservationWithRefundAsync(Guid reservationId, int refundedTokens)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            UPDATE canvas_reservations
+            SET is_active = 0, refunded_tokens = @RefundedTokens
+            WHERE reservation_id = @ReservationId;
+            """;
+        await db.ExecuteAsync(sql, new { ReservationId = reservationId, RefundedTokens = refundedTokens });
     }
 
     /// <summary>
@@ -479,11 +508,24 @@ public class CanvasRepository
                     created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
                     last_login_at DATETIMEOFFSET NULL,
                     is_active BIT NOT NULL DEFAULT 1,
-                    role NVARCHAR(20) NOT NULL DEFAULT 'User'
+                    role NVARCHAR(20) NOT NULL DEFAULT 'User',
+                    bonus_tokens INT NOT NULL DEFAULT 0,
+                    last_daily_claim DATETIMEOFFSET NULL
                 );
 
                 CREATE UNIQUE INDEX IX_users_normalized_username ON users(normalized_username);
                 CREATE INDEX IX_users_created_at ON users(created_at);
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('users', 'bonus_tokens') IS NULL
+                BEGIN
+                    ALTER TABLE users ADD bonus_tokens INT NOT NULL DEFAULT 0;
+                END
+                IF COL_LENGTH('users', 'last_daily_claim') IS NULL
+                BEGIN
+                    ALTER TABLE users ADD last_daily_claim DATETIMEOFFSET NULL;
+                END
             END
 
             -- Ensure at least one Admin exists if users are registered
@@ -504,9 +546,9 @@ public class CanvasRepository
         using IDbConnection db = new SqlConnection(_connectionString);
         const string sql = """
             INSERT INTO users 
-                (id, username, normalized_username, display_name, password_hash, password_salt, created_at, last_login_at, is_active, role)
+                (id, username, normalized_username, display_name, password_hash, password_salt, created_at, last_login_at, is_active, role, bonus_tokens, last_daily_claim)
             VALUES 
-                (@Id, @Username, @NormalizedUsername, @DisplayName, @PasswordHash, @PasswordSalt, @CreatedAt, @LastLoginAt, @IsActive, @Role);
+                (@Id, @Username, @NormalizedUsername, @DisplayName, @PasswordHash, @PasswordSalt, @CreatedAt, @LastLoginAt, @IsActive, @Role, @BonusTokens, @LastDailyClaim);
             """;
         await db.ExecuteAsync(sql, user);
     }
@@ -530,7 +572,9 @@ public class CanvasRepository
                 created_at AS CreatedAt,
                 last_login_at AS LastLoginAt,
                 is_active AS IsActive,
-                role AS Role
+                role AS Role,
+                bonus_tokens AS BonusTokens,
+                last_daily_claim AS LastDailyClaim
             FROM users WITH (NOLOCK)
             WHERE normalized_username = @NormalizedUsername;
             """;
@@ -554,11 +598,236 @@ public class CanvasRepository
                 created_at AS CreatedAt,
                 last_login_at AS LastLoginAt,
                 is_active AS IsActive,
-                role AS Role
+                role AS Role,
+                bonus_tokens AS BonusTokens,
+                last_daily_claim AS LastDailyClaim
             FROM users WITH (NOLOCK)
             WHERE id = @Id;
             """;
         return await db.QuerySingleOrDefaultAsync<User>(sql, new { Id = id });
+    }
+
+    // =========================================================================
+    // Unified Token Economy & Ledger
+    // =========================================================================
+
+    /// <summary>
+    /// Ensures that token_transactions, promo_codes, and promo_code_redemptions tables exist.
+    /// </summary>
+    public async Task EnsureTokenSchemaAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'token_transactions')
+            BEGIN
+                CREATE TABLE token_transactions (
+                    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+                    user_id UNIQUEIDENTIFIER NOT NULL,
+                    amount INT NOT NULL,
+                    transaction_type NVARCHAR(50) NOT NULL,
+                    description NVARCHAR(255) NULL,
+                    reference_id NVARCHAR(100) NULL,
+                    created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+                );
+                CREATE INDEX IX_token_transactions_user ON token_transactions(user_id, created_at DESC);
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'promo_codes')
+            BEGIN
+                CREATE TABLE promo_codes (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    code NVARCHAR(50) NOT NULL,
+                    token_amount INT NOT NULL,
+                    max_uses INT NOT NULL DEFAULT 1000,
+                    current_uses INT NOT NULL DEFAULT 0,
+                    expires_at DATETIMEOFFSET NULL,
+                    is_active BIT NOT NULL DEFAULT 1,
+                    created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+                );
+                CREATE UNIQUE INDEX IX_promo_codes_code ON promo_codes(code);
+
+                INSERT INTO promo_codes (code, token_amount, max_uses, current_uses, is_active)
+                VALUES 
+                    ('CYBERPUNK2026', 50, 10000, 0, 1),
+                    ('ANTIGRAVITY', 100, 5000, 0, 1),
+                    ('VIBEPAINT', 30, 10000, 0, 1);
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'promo_code_redemptions')
+            BEGIN
+                CREATE TABLE promo_code_redemptions (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    promo_code_id INT NOT NULL,
+                    user_id UNIQUEIDENTIFIER NOT NULL,
+                    redeemed_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+                    CONSTRAINT FK_promo_redemptions_code FOREIGN KEY (promo_code_id) REFERENCES promo_codes(id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IX_promo_redemptions_user ON promo_code_redemptions(promo_code_id, user_id);
+            END
+            """;
+        await db.ExecuteAsync(sql);
+    }
+
+    /// <summary>
+    /// Gets current SQL bonus token balance for a user.
+    /// </summary>
+    public async Task<int> GetBonusTokensAsync(Guid userId)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = "SELECT bonus_tokens FROM users WITH (NOLOCK) WHERE id = @UserId;";
+        return await db.ExecuteScalarAsync<int?>(sql, new { UserId = userId }) ?? 0;
+    }
+
+    /// <summary>
+    /// Adds bonus tokens to a user and logs transaction in ledger.
+    /// </summary>
+    public async Task AddBonusTokensAsync(Guid userId, int amount, string transactionType, string? description = null, string? referenceId = null)
+    {
+        if (amount <= 0) return;
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            UPDATE users 
+            SET bonus_tokens = bonus_tokens + @Amount 
+            WHERE id = @UserId;
+
+            INSERT INTO token_transactions (user_id, amount, transaction_type, description, reference_id)
+            VALUES (@UserId, @Amount, @TransactionType, @Description, @ReferenceId);
+            """;
+        await db.ExecuteAsync(sql, new { UserId = userId, Amount = amount, TransactionType = transactionType, Description = description, ReferenceId = referenceId });
+    }
+
+    /// <summary>
+    /// Deducts bonus tokens from a user and logs transaction in ledger.
+    /// </summary>
+    public async Task DeductBonusTokensAsync(Guid userId, int amount, string transactionType = "CONSUMED", string? description = null, string? referenceId = null)
+    {
+        if (amount <= 0) return;
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            UPDATE users 
+            SET bonus_tokens = CASE WHEN bonus_tokens >= @Amount THEN bonus_tokens - @Amount ELSE 0 END 
+            WHERE id = @UserId;
+
+            INSERT INTO token_transactions (user_id, amount, transaction_type, description, reference_id)
+            VALUES (@UserId, -@Amount, @TransactionType, @Description, @ReferenceId);
+            """;
+        await db.ExecuteAsync(sql, new { UserId = userId, Amount = amount, TransactionType = transactionType, Description = description, ReferenceId = referenceId });
+    }
+
+    /// <summary>
+    /// Claims the daily supply drop reward if 24 hours have elapsed since last claim.
+    /// </summary>
+    public async Task<(bool Success, string Message, int ClaimedTokens, int NewBalance, DateTimeOffset NextClaimAt)> ClaimDailyRewardAsync(Guid userId, int rewardAmount = 30)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        var user = await GetUserByIdAsync(userId);
+        if (user == null)
+            return (false, "User not found.", 0, 0, DateTimeOffset.UtcNow);
+
+        var now = DateTimeOffset.UtcNow;
+        if (user.LastDailyClaim.HasValue)
+        {
+            var elapsed = now - user.LastDailyClaim.Value;
+            if (elapsed < TimeSpan.FromHours(24))
+            {
+                var nextClaim = user.LastDailyClaim.Value.AddHours(24);
+                var remaining = nextClaim - now;
+                return (false, $"Daily supply drop already claimed! Next drop in {(int)remaining.TotalHours}h {remaining.Minutes}m.", 0, user.BonusTokens, nextClaim);
+            }
+        }
+
+        const string sql = """
+            UPDATE users 
+            SET bonus_tokens = bonus_tokens + @RewardAmount,
+                last_daily_claim = @Now
+            WHERE id = @UserId;
+
+            INSERT INTO token_transactions (user_id, amount, transaction_type, description)
+            VALUES (@UserId, @RewardAmount, 'DAILY_CLAIM', 'Daily Painter Supply Drop');
+            """;
+
+        await db.ExecuteAsync(sql, new { UserId = userId, RewardAmount = rewardAmount, Now = now });
+        int newBalance = user.BonusTokens + rewardAmount;
+        return (true, $"Claimed +{rewardAmount} Bonus Tokens! ⚡", rewardAmount, newBalance, now.AddHours(24));
+    }
+
+    private sealed class PromoCodeRecord
+    {
+        public int Id { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public int TokenAmount { get; set; }
+        public int MaxUses { get; set; }
+        public int CurrentUses { get; set; }
+        public DateTimeOffset? ExpiresAt { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    /// <summary>
+    /// Redeems an event or community promo code.
+    /// </summary>
+    public async Task<(bool Success, string Message, int GrantedTokens, int NewBalance)> RedeemPromoCodeAsync(Guid userId, string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return (false, "Promo code cannot be empty.", 0, 0);
+
+        string cleanCode = code.Trim().ToUpperInvariant();
+        using IDbConnection db = new SqlConnection(_connectionString);
+
+        const string lookupSql = """
+            SELECT id AS Id, code AS Code, token_amount AS TokenAmount, max_uses AS MaxUses, current_uses AS CurrentUses, expires_at AS ExpiresAt, is_active AS IsActive
+            FROM promo_codes WITH (UPDLOCK)
+            WHERE code = @Code;
+            """;
+        var promo = await db.QuerySingleOrDefaultAsync<PromoCodeRecord>(lookupSql, new { Code = cleanCode });
+        if (promo == null || !promo.IsActive)
+            return (false, "Invalid or inactive promo code.", 0, 0);
+
+        if (promo.ExpiresAt != null && promo.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+            return (false, "This promo code has expired.", 0, 0);
+
+        if (promo.CurrentUses >= promo.MaxUses)
+            return (false, "This promo code has reached its maximum redemptions.", 0, 0);
+
+        const string checkRedeemedSql = """
+            SELECT COUNT(*) FROM promo_code_redemptions WHERE promo_code_id = @PromoId AND user_id = @UserId;
+            """;
+        int alreadyRedeemed = await db.ExecuteScalarAsync<int>(checkRedeemedSql, new { PromoId = promo.Id, UserId = userId });
+        if (alreadyRedeemed > 0)
+            return (false, "You have already redeemed this promo code.", 0, 0);
+
+        int amount = promo.TokenAmount;
+        const string redeemSql = """
+            INSERT INTO promo_code_redemptions (promo_code_id, user_id) VALUES (@PromoId, @UserId);
+            UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = @PromoId;
+            UPDATE users SET bonus_tokens = bonus_tokens + @Amount WHERE id = @UserId;
+            INSERT INTO token_transactions (user_id, amount, transaction_type, description, reference_id)
+            VALUES (@UserId, @Amount, 'PROMO_CODE', 'Redeemed code: ' + @Code, @Code);
+            """;
+        await db.ExecuteAsync(redeemSql, new { PromoId = promo.Id, UserId = userId, Amount = amount, Code = cleanCode });
+
+        int updatedBalance = await GetBonusTokensAsync(userId);
+        return (true, $"Promo code successfully redeemed! Granted +{amount} Bonus Tokens! ⚡", amount, updatedBalance);
+    }
+
+    /// <summary>
+    /// Fetches recent token ledger transactions for a user.
+    /// </summary>
+    public async Task<IEnumerable<TokenTransactionDto>> GetTokenTransactionsAsync(Guid userId, int limit = 20)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            SELECT TOP (@Limit)
+                id AS Id,
+                amount AS Amount,
+                transaction_type AS TransactionType,
+                description AS Description,
+                reference_id AS ReferenceId,
+                created_at AS CreatedAt
+            FROM token_transactions WITH (NOLOCK)
+            WHERE user_id = @UserId
+            ORDER BY created_at DESC;
+            """;
+        return await db.QueryAsync<TokenTransactionDto>(sql, new { UserId = userId, Limit = limit });
     }
 
     /// <summary>

@@ -91,11 +91,18 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 - Collaborator secret keys permit team collaboration inside reserved zones.
 - Automatic expiration worker (`ReservationExpirationService`) frees expired claims.
 
-### 3. Moderation & Anti-Abuse
+### 3. Unified Token Economy & Overdrive
+- **Dual-Token Model**: 16 regenerating free charges (0.2 charges/sec) + persistent banked bonus tokens stored in SQL Server (`users.bonus_tokens`) and cached in Redis (`user:{userId}:bonus_balance`).
+- **Pixel Placement Overdrive**: Placements seamlessly fall back to bonus tokens when regular charges deplete, preventing creative interruptions.
+- **Territory Reservation Leases**: Dynamic leasing formula based on footprint and duration ($\text{Base} + \lceil \frac{\text{Area}}{500} \rceil \times \text{Duration Multiplier}$). Studio canvas owners retain 0-token free reservations on their own walls.
+- **50% Early-Release Refund**: Releasing a reserved territory before expiration refunds 50% of the unused duration back to the owner's bonus token vault.
+- **Token Inflow**: +50 welcome bonus tokens on registration, +25 daily supply drop (`POST /api/tokens/claim-daily`), and promo voucher code redemption (`POST /api/tokens/redeem`). Full transactional audit history via `token_transactions`.
+
+### 4. Moderation & Anti-Abuse
 - **Shadow Banning Engine**: Placements by banned IPs/users are silently isolated into SQL with `is_shadow_banned = 1`, bypassing Redis mutation and public broadcasts.
 - **Role-Based Access Control (RBAC)**: `User`, `Moderator`, and `Admin` roles with administrative role management endpoints (`POST /api/moderation/set-role`).
 
-### 4. Time-Lapse & Replay
+### 5. Time-Lapse & Replay
 - High-speed delta timeline scrubber (`/api/history/deltas`) with variable playback speeds (1 min/s to 1 day/s) and dual start/end time pickers.
 
 ---
@@ -110,10 +117,17 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 - `GET /api/canvas/palette`: Returns all 256 palette colors.
 - `GET /api/canvas/palette?activeOnly=true`: Returns the 32 currently active colors.
 
+### Token Economy & Vault
+- `GET /api/tokens/balance`: Get current painter bonus tokens balance and daily claim availability.
+- `POST /api/tokens/claim-daily`: Claim +25 bonus token daily supply drop (once per 24 hours).
+- `POST /api/tokens/redeem`: Redeem event/stream promo code (e.g. `WELCOME50`, `CYBERPUNK2026`).
+- `GET /api/tokens/cost-preview?width={w}&height={h}&durationMinutes={m}`: Calculate token lease cost for territory dimensions and duration.
+- `GET /api/tokens/history`: Audit ledger of recent token credits, deductions, and refunds.
+
 ### Authentication & Profiles
-- `POST /api/auth/register`: Register new painter account.
+- `POST /api/auth/register`: Register new painter account (+50 bonus tokens welcome stash).
 - `POST /api/auth/login`: Authenticate and receive JWT bearer token.
-- `GET /api/auth/me`: Fetch current painter profile, stats, and role.
+- `GET /api/auth/me`: Fetch current painter profile, stats, role, and bonus balance.
 
 ### Wall Studios
 - `GET /api/walls`: List public walls.
@@ -177,6 +191,7 @@ Execute the SQL migration scripts located in `Scripts/` in order:
 4. `Scripts/003_create_users_table.sql`
 5. `Scripts/003_create_canvas_walls.sql`
 6. `Scripts/004_create_canvas_palette.sql`
+7. `Scripts/005_create_token_system.sql`
 
 #### Build & Run
 ```bash
@@ -190,7 +205,7 @@ dotnet run
 Navigate to `http://localhost:5217` in your browser.
 
 #### Running Tests
-The repository includes a comprehensive xUnit test suite covering coordinate math, token bucket rate-limiting, spatial collisions, cryptographic security, and palette validation:
+The repository includes a comprehensive 104-test xUnit suite covering coordinate math, token-bucket rate limiting, bonus tokens, spatial collision algorithms, cryptographic security, and palette validation:
 
 ```bash
 # Run all automated unit tests

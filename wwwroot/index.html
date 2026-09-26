@@ -143,6 +143,14 @@
         .charge-meter-container.depleted {
             border-color: #FF5252; box-shadow: 0 0 10px rgba(255, 82, 82, 0.35);
         }
+        .charge-meter-container.overdrive {
+            border-color: #FFD700; box-shadow: 0 0 12px rgba(255, 215, 0, 0.45);
+        }
+        .charge-bonus-badge {
+            background: rgba(255, 215, 0, 0.15); color: #FFD700;
+            border: 1px solid rgba(255, 215, 0, 0.4); padding: 1px 5px;
+            border-radius: 4px; font-size: 0.85em; font-weight: bold; margin-left: 2px;
+        }
         .charge-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; }
         .charge-label { display: flex; align-items: center; gap: 5px; font-weight: bold; color: #FFD700; }
         .charge-timer { font-family: monospace; font-size: 0.82em; color: #00E5FF; }
@@ -517,6 +525,7 @@
                 <span class="charge-label">
                     <span>⚡</span>
                     <span id="charge-count">16</span> / <span id="charge-max">16</span> Charges
+                    <span id="charge-bonus-badge" class="charge-bonus-badge" style="display: none;">+0 ✦</span>
                 </span>
                 <span class="charge-timer" id="charge-timer">Ready</span>
             </div>
@@ -662,6 +671,20 @@
                         <option value="720">12 Hours</option>
                         <option value="1440">24 Hours (Maximum)</option>
                     </select>
+                </div>
+
+                <div id="res-cost-container" style="background: rgba(255, 215, 0, 0.07); border: 1px solid rgba(255, 215, 0, 0.25); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.85em; color: #ccc;">Lease Cost:</span>
+                        <strong id="res-cost-badge" style="color: #FFD700; font-size: 1.05em;">4 Bonus Tokens ✦</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; color: #88bbcc;">
+                        <span>Your Available Tokens:</span>
+                        <span id="res-user-tokens-badge" style="color: #00E5FF; font-weight: bold;">0 ✦</span>
+                    </div>
+                    <div id="res-cost-warning" style="display: none; font-size: 0.78em; color: #FF5252; background: rgba(255, 82, 82, 0.15); border: 1px solid rgba(255, 82, 82, 0.3); border-radius: 4px; padding: 4px 8px;">
+                        ⚠️ Insufficient bonus tokens for this lease duration/size.
+                    </div>
                 </div>
 
                 <div style="background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 6px; padding: 10px; font-size: 0.8em; color: #88bbcc; line-height: 1.4;">
@@ -844,6 +867,35 @@
                         <span>🏰 Territories:</span>
                         <strong id="prof-stat-zones" style="color: #00E5FF; font-size: 1.1em;">0</strong>
                     </div>
+                </div>
+
+                <!-- Token Vault & Rewards Card -->
+                <div style="background: rgba(255, 215, 0, 0.06); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span style="font-size: 1.2em;">✦</span>
+                            <span style="font-weight: bold; font-size: 0.95em; color: #FFD700;">Bonus Token Vault</span>
+                        </div>
+                        <strong id="prof-bonus-tokens" style="font-size: 1.25em; color: #FFD700; font-family: monospace;">0 ✦</strong>
+                    </div>
+                    <div style="font-size: 0.78em; color: #aaa; line-height: 1.3;">
+                        Bonus tokens grant Overdrive painting when regenerating charges deplete, and fund canvas territory reservation leases.
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button id="btn-claim-daily-drop" class="btn" style="flex: 1; background: #005577; border-color: #00E5FF; color: #fff; font-size: 0.85em; padding: 8px; font-weight: bold;">
+                            🎁 Claim Daily Drop (+25 ✦)
+                        </button>
+                    </div>
+                    <div id="daily-drop-status" style="display: none; font-size: 0.78em; padding: 6px 10px; border-radius: 4px;"></div>
+
+                    <div style="display: flex; gap: 6px; margin-top: 2px;">
+                        <input type="text" id="input-promo-code" class="btn" placeholder="Promo Code (e.g. WELCOME50)" style="flex: 1; text-align: left; padding: 6px 10px; font-size: 0.82em; text-transform: uppercase;">
+                        <button id="btn-redeem-promo" class="btn" style="background: #2a3a10; border-color: #77cc00; color: #bbff44; font-size: 0.82em; padding: 6px 12px; font-weight: bold;">
+                            Redeem
+                        </button>
+                    </div>
+                    <div id="promo-status" style="display: none; font-size: 0.78em; padding: 6px 10px; border-radius: 4px;"></div>
                 </div>
 
                 <div class="inspector-meta-group">
@@ -1198,6 +1250,10 @@
         const resSecretKeyDisplay = document.getElementById("res-secret-key-display");
         const resCopyKeyBtn = document.getElementById("res-copy-key-btn");
         const resDoneBtn = document.getElementById("res-done-btn");
+        const resCostContainer = document.getElementById("res-cost-container");
+        const resCostBadge = document.getElementById("res-cost-badge");
+        const resUserTokensBadge = document.getElementById("res-user-tokens-badge");
+        const resCostWarning = document.getElementById("res-cost-warning");
 
         // Zones Modal Elements
         const zonesModal = document.getElementById("zones-modal");
@@ -1252,6 +1308,12 @@
         const profCreatedAt = document.getElementById("prof-created-at");
         const profRole = document.getElementById("prof-role");
         const profId = document.getElementById("prof-id");
+        const profBonusTokens = document.getElementById("prof-bonus-tokens");
+        const btnClaimDailyDrop = document.getElementById("btn-claim-daily-drop");
+        const dailyDropStatus = document.getElementById("daily-drop-status");
+        const inputPromoCode = document.getElementById("input-promo-code");
+        const btnRedeemPromo = document.getElementById("btn-redeem-promo");
+        const promoStatus = document.getElementById("promo-status");
         const authLogoutBtn = document.getElementById("auth-logout-btn");
         const authProfileDoneBtn = document.getElementById("auth-profile-done-btn");
 
@@ -1594,11 +1656,13 @@
         const chargeMaxSpan = document.getElementById("charge-max");
         const chargeTimerSpan = document.getElementById("charge-timer");
         const chargePipsContainer = document.getElementById("charge-pips");
+        const chargeBonusBadge = document.getElementById("charge-bonus-badge");
 
         let currentCharges = 16.0;
         let maxCharges = 16;
         let refillRate = 0.2; // charges per second
         let lastChargeUpdateTime = Date.now();
+        let bonusBalance = 0;
 
         function initChargePips() {
             chargePipsContainer.innerHTML = "";
@@ -1614,6 +1678,15 @@
             const wholeCharges = Math.floor(currentCharges);
             chargeCountSpan.innerText = wholeCharges;
             chargeMaxSpan.innerText = maxCharges;
+
+            if (chargeBonusBadge) {
+                if (bonusBalance > 0) {
+                    chargeBonusBadge.innerText = `+${bonusBalance} ✦`;
+                    chargeBonusBadge.style.display = "inline-block";
+                } else {
+                    chargeBonusBadge.style.display = "none";
+                }
+            }
 
             const pips = chargePipsContainer.children;
             for (let i = 0; i < pips.length; i++) {
@@ -1631,6 +1704,14 @@
                 }
             }
 
+            const hasOverdrive = wholeCharges === 0 && bonusBalance > 0;
+            if (hasOverdrive) {
+                chargeContainer.classList.add("overdrive");
+                chargeContainer.classList.remove("depleted");
+            } else {
+                chargeContainer.classList.remove("overdrive");
+            }
+
             if (currentCharges >= maxCharges) {
                 chargeTimerSpan.innerText = "Ready";
                 chargeTimerSpan.style.color = "#00E5FF";
@@ -1638,9 +1719,14 @@
             } else if (wholeCharges === 0) {
                 const remainingFraction = 1.0 - (currentCharges % 1);
                 const secUntilNext = (remainingFraction / refillRate).toFixed(1);
-                chargeTimerSpan.innerText = `Recharge: ${secUntilNext}s`;
-                chargeTimerSpan.style.color = "#FF5252";
-                chargeContainer.classList.add("depleted");
+                if (bonusBalance > 0) {
+                    chargeTimerSpan.innerText = `OVERDRIVE (${secUntilNext}s)`;
+                    chargeTimerSpan.style.color = "#FFD700";
+                } else {
+                    chargeTimerSpan.innerText = `Recharge: ${secUntilNext}s`;
+                    chargeTimerSpan.style.color = "#FF5252";
+                    chargeContainer.classList.add("depleted");
+                }
             } else {
                 const remainingFraction = 1.0 - (currentCharges % 1);
                 const secUntilNext = (remainingFraction / refillRate).toFixed(1);
@@ -1651,10 +1737,13 @@
         }
 
         function shakeChargeMeter() {
-            chargeContainer.classList.add("shake", "depleted");
+            chargeContainer.classList.add("shake");
+            if (currentCharges < 1 && bonusBalance <= 0) {
+                chargeContainer.classList.add("depleted");
+            }
             setTimeout(() => {
                 chargeContainer.classList.remove("shake");
-                if (currentCharges >= 1) chargeContainer.classList.remove("depleted");
+                if (currentCharges >= 1 || bonusBalance > 0) chargeContainer.classList.remove("depleted");
             }, 400);
         }
 
@@ -2204,6 +2293,7 @@
                     .then(res => {
                         if (res) {
                             currentCharges = res.remainingTokens;
+                            bonusBalance = res.bonusBalance ?? 0;
                             maxCharges = res.maxCapacity || 16;
                             refillRate = res.refillRate || 0.2;
                             lastChargeUpdateTime = Date.now();
@@ -2253,7 +2343,7 @@
                  currentUserProfile.role === "Admin" || currentUserProfile.role === "Moderator"));
 
             // Wall owner gets unlimited free painting on their own wall!
-            if (!isWallOwner && currentCharges < 1) {
+            if (!isWallOwner && currentCharges < 1 && bonusBalance < 1) {
                 statusDiv.innerText = "Rate limit! Waiting for next charge to refill...";
                 statusDiv.style.color = "#FF5252";
                 shakeChargeMeter();
@@ -2262,9 +2352,13 @@
 
             // Paint mode
             if (connection && connection.state === signalR.HubConnectionState.Connected) {
-                // Optimistic deduction only for non-owners
+                // Optimistic deduction only for non-owners (charges first, then bonus tokens)
                 if (!isWallOwner) {
-                    currentCharges = Math.max(0, currentCharges - 1);
+                    if (currentCharges >= 1) {
+                        currentCharges = Math.max(0, currentCharges - 1);
+                    } else if (bonusBalance > 0) {
+                        bonusBalance = Math.max(0, bonusBalance - 1);
+                    }
                     updateChargeHud();
                 }
 
@@ -2314,8 +2408,9 @@
                         minimapOffCtx.fillStyle = paletteColors[selectedColorId];
                         minimapOffCtx.fillRect(Math.floor(worldX * scaleX), Math.floor(worldY * scaleY), 1, 1);
 
-                        if (res && res.remainingTokens !== undefined && !isWallOwner) {
-                            currentCharges = res.remainingTokens;
+                        if (res && !isWallOwner) {
+                            if (res.remainingTokens !== undefined) currentCharges = res.remainingTokens;
+                            if (res.bonusBalance !== undefined) bonusBalance = res.bonusBalance;
                             maxCharges = res.maxCapacity || maxCharges;
                             refillRate = res.refillRate || refillRate;
                             lastChargeUpdateTime = Date.now();
@@ -2343,8 +2438,13 @@
                         // Refund token if rejected due to reservation, permissions, or password
                         if (!isWallOwner) {
                             if (msg.includes("reserved") || msg.includes("collaborator key") || msg.includes("private") || msg.includes("passphrase")) {
-                                currentCharges = Math.min(maxCharges, currentCharges + 1);
-                                updateChargeHud();
+                                connection.invoke("GetChargeStatus").then(st => {
+                                    if (st) {
+                                        currentCharges = st.remainingTokens;
+                                        bonusBalance = st.bonusBalance ?? 0;
+                                        updateChargeHud();
+                                    }
+                                }).catch(() => {});
                                 return;
                             }
 
@@ -2723,6 +2823,61 @@
         // Territory Reservation Modal Controllers
         let pendingReservationCoords = null; // { x1, y1, x2, y2 }
 
+        function calculateReservationCost(width, height, durationMinutes) {
+            const area = Math.max(25, width * height);
+            let durationMultiplier;
+            if (durationMinutes <= 15) durationMultiplier = 0.4;
+            else if (durationMinutes <= 60) durationMultiplier = 1.0;
+            else if (durationMinutes <= 240) durationMultiplier = 2.4;
+            else if (durationMinutes <= 720) durationMultiplier = 3.8;
+            else durationMultiplier = 5.0;
+
+            const areaBase = 4.0 + (area / 500.0);
+            return Math.max(2, Math.round(areaBase * durationMultiplier));
+        }
+
+        function updateReservationCostPreview() {
+            if (!pendingReservationCoords) return;
+            const w = pendingReservationCoords.x2 - pendingReservationCoords.x1 + 1;
+            const h = pendingReservationCoords.y2 - pendingReservationCoords.y1 + 1;
+            const duration = parseInt(resDurationSelect.value, 10) || 60;
+
+            const isWallOwner = Boolean(activeWallData && currentUserProfile && 
+                (String(activeWallData.ownerId).toLowerCase() === String(currentUserProfile.id).toLowerCase() ||
+                 currentUserProfile.role === "Admin" || currentUserProfile.role === "Moderator"));
+
+            const cost = isWallOwner ? 0 : calculateReservationCost(w, h, duration);
+
+            if (resCostBadge) {
+                if (isWallOwner) {
+                    resCostBadge.innerText = "0 Bonus Tokens (Owner Free) ✦";
+                    resCostBadge.style.color = "#00E676";
+                } else {
+                    resCostBadge.innerText = `${cost} Bonus Tokens ✦`;
+                    resCostBadge.style.color = "#FFD700";
+                }
+            }
+            if (resUserTokensBadge) {
+                resUserTokensBadge.innerText = `${Math.floor(currentCharges)} charges + ${bonusBalance} bonus ✦`;
+            }
+
+            const totalAvailable = Math.floor(currentCharges) + bonusBalance;
+            if (!isWallOwner && totalAvailable < cost) {
+                if (resCostWarning) {
+                    resCostWarning.style.display = "block";
+                    resCostWarning.innerText = `⚠️ Insufficient tokens (${totalAvailable} available: ${Math.floor(currentCharges)} charges + ${bonusBalance} bonus). Need ${cost} tokens.`;
+                }
+                resSubmitBtn.disabled = true;
+                resSubmitBtn.style.opacity = "0.5";
+            } else {
+                if (resCostWarning) resCostWarning.style.display = "none";
+                resSubmitBtn.disabled = false;
+                resSubmitBtn.style.opacity = "1";
+            }
+        }
+
+        resDurationSelect.addEventListener("change", updateReservationCostPreview);
+
         function openReservationModal(x1, y1, x2, y2) {
             pendingReservationCoords = { x1, y1, x2, y2 };
             const w = x2 - x1 + 1;
@@ -2734,6 +2889,7 @@
             resOwnerInput.value = (currentUserProfile && (currentUserProfile.displayName || currentUserProfile.username))
                 ? (currentUserProfile.displayName || currentUserProfile.username)
                 : (localStorage.getItem("graffiti_nickname") || "");
+            updateReservationCostPreview();
             resFormContainer.style.display = "flex";
             resSuccessContainer.style.display = "none";
             resModal.style.display = "flex";
@@ -2763,7 +2919,10 @@
             try {
                 const res = await fetch(`${API_BASE_URL}/api/reservations/reserve`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { 
+                        "Content-Type": "application/json",
+                        ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {})
+                    },
                     body: JSON.stringify({
                         x1: pendingReservationCoords.x1,
                         y1: pendingReservationCoords.y1,
@@ -2772,13 +2931,20 @@
                         label: label,
                         ownerName: ownerName,
                         ownerId: effectiveOwnerId,
-                        durationMinutes: duration
+                        durationMinutes: duration,
+                        wallId: activeWallId || null
                     })
                 });
 
                 const data = await res.json();
                 if (!res.ok || !data.success) {
                     throw new Error(data.message || `HTTP ${res.status}`);
+                }
+
+                if (data.remainingBonusTokens !== undefined) {
+                    bonusBalance = data.remainingBonusTokens;
+                    if (currentUserProfile) currentUserProfile.bonusTokens = bonusBalance;
+                    updateChargeHud();
                 }
 
                 // Store secret key in local storage and active map
@@ -2791,7 +2957,7 @@
                 resSuccessContainer.style.display = "flex";
                 resSecretKeyDisplay.innerText = data.secretKey || "";
 
-                statusDiv.innerText = "Territory successfully reserved!";
+                statusDiv.innerText = `Territory successfully reserved! (-${data.tokenCost || 0} tokens)`;
                 statusDiv.style.color = "#00E5FF";
 
                 await loadActiveReservations();
@@ -2800,6 +2966,7 @@
             } finally {
                 resSubmitBtn.disabled = false;
                 resSubmitBtn.innerText = "🛡️ Confirm Territory Reservation";
+                updateReservationCostPreview();
             }
         });
 
@@ -3042,7 +3209,10 @@
             try {
                 const res = await fetch(`${API_BASE_URL}/api/reservations/cancel`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { 
+                        "Content-Type": "application/json",
+                        ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {})
+                    },
                     body: JSON.stringify({
                         reservationId: reservationId,
                         ownerId: currentUserProfile ? currentUserProfile.id : storedUserId,
@@ -3052,6 +3222,12 @@
                 const data = await res.json();
                 if (!res.ok || !data.success) {
                     throw new Error(data.message || `HTTP ${res.status}`);
+                }
+
+                if (data.newBonusBalance !== undefined) {
+                    bonusBalance = data.newBonusBalance;
+                    if (currentUserProfile) currentUserProfile.bonusTokens = bonusBalance;
+                    updateChargeHud();
                 }
 
                 // Immediately remove from activeReservations
@@ -3071,7 +3247,11 @@
                 renderMinimap();
                 renderZonesModalContent();
 
-                statusDiv.innerText = "Territory successfully released! All players can paint here.";
+                let releaseMsg = "Territory successfully released! All players can paint here.";
+                if (data.refundedTokens > 0) {
+                    releaseMsg += ` Refunded +${data.refundedTokens} bonus tokens back to your vault!`;
+                }
+                statusDiv.innerText = releaseMsg;
                 statusDiv.style.color = "#00E5FF";
 
                 await loadActiveReservations();
@@ -3251,15 +3431,21 @@
                 if (res.ok) {
                     const profile = await res.json();
                     currentUserProfile = profile;
+                    if (profile.bonusTokens !== undefined && profile.bonusTokens !== null) {
+                        bonusBalance = profile.bonusTokens;
+                    }
                     renderProfileView(profile);
                     updateAccountHud();
+                    updateChargeHud();
                     return profile;
                 } else if (res.status === 401) {
                     console.warn("Auth token expired or invalid; reverting to guest mode.");
                     authToken = null;
                     currentUserProfile = null;
+                    bonusBalance = 0;
                     localStorage.removeItem("graffiti_auth_token");
                     updateAccountHud();
+                    updateChargeHud();
                 }
             } catch (err) {
                 console.warn("Failed to fetch user profile:", err);
@@ -3276,6 +3462,141 @@
             if (profCreatedAt) profCreatedAt.innerText = new Date(profile.createdAt).toLocaleDateString();
             if (profRole) profRole.innerText = profile.role || "User";
             if (profId) profId.innerText = profile.id;
+
+            const tokens = (profile.bonusTokens !== undefined && profile.bonusTokens !== null) ? profile.bonusTokens : bonusBalance;
+            if (profBonusTokens) profBonusTokens.innerText = `${tokens} ✦`;
+
+            // Daily drop button state
+            if (btnClaimDailyDrop) {
+                let canClaim = true;
+                if (profile.lastDailyClaim) {
+                    const lastClaimTime = new Date(profile.lastDailyClaim).getTime();
+                    const hoursSince = (Date.now() - lastClaimTime) / (1000 * 60 * 60);
+                    if (hoursSince < 24) {
+                        canClaim = false;
+                    }
+                }
+                if (canClaim) {
+                    btnClaimDailyDrop.disabled = false;
+                    btnClaimDailyDrop.innerText = "🎁 Claim Daily Drop (+25 ✦)";
+                    btnClaimDailyDrop.style.background = "#005577";
+                    btnClaimDailyDrop.style.borderColor = "#00E5FF";
+                    if (dailyDropStatus) dailyDropStatus.style.display = "none";
+                } else {
+                    btnClaimDailyDrop.disabled = true;
+                    btnClaimDailyDrop.innerText = "✅ Daily Drop Claimed";
+                    btnClaimDailyDrop.style.background = "#22333b";
+                    btnClaimDailyDrop.style.borderColor = "#335566";
+                }
+            }
+            if (promoStatus) promoStatus.style.display = "none";
+        }
+
+        async function claimDailyDrop() {
+            if (!authToken) {
+                alert("Please log in to claim your daily bonus tokens.");
+                return;
+            }
+            if (!btnClaimDailyDrop) return;
+            btnClaimDailyDrop.disabled = true;
+            btnClaimDailyDrop.innerText = "Claiming...";
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/tokens/claim-daily`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${authToken}`
+                    }
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || "Failed to claim daily reward");
+                }
+
+                bonusBalance = data.newBonusBalance;
+                if (currentUserProfile) {
+                    currentUserProfile.bonusTokens = bonusBalance;
+                    currentUserProfile.lastDailyClaim = new Date().toISOString();
+                }
+                updateChargeHud();
+                renderProfileView(currentUserProfile);
+
+                if (dailyDropStatus) {
+                    dailyDropStatus.style.display = "block";
+                    dailyDropStatus.style.background = "rgba(0, 230, 118, 0.15)";
+                    dailyDropStatus.style.border = "1px solid #00E676";
+                    dailyDropStatus.style.color = "#00E676";
+                    dailyDropStatus.innerText = `🎉 Claimed +${data.bonusTokensAdded} bonus tokens! Next claim available tomorrow.`;
+                }
+                btnClaimDailyDrop.disabled = true;
+                btnClaimDailyDrop.innerText = "✅ Daily Drop Claimed";
+                btnClaimDailyDrop.style.background = "#22333b";
+                btnClaimDailyDrop.style.borderColor = "#335566";
+            } catch (err) {
+                if (dailyDropStatus) {
+                    dailyDropStatus.style.display = "block";
+                    dailyDropStatus.style.background = "rgba(255, 82, 82, 0.15)";
+                    dailyDropStatus.style.border = "1px solid #FF5252";
+                    dailyDropStatus.style.color = "#FF8888";
+                    dailyDropStatus.innerText = err.message;
+                }
+                btnClaimDailyDrop.disabled = false;
+                btnClaimDailyDrop.innerText = "🎁 Claim Daily Drop (+25 ✦)";
+            }
+        }
+
+        async function redeemPromoCode() {
+            if (!authToken) {
+                alert("Please log in to redeem promo codes.");
+                return;
+            }
+            if (!inputPromoCode || !btnRedeemPromo) return;
+            const code = inputPromoCode.value.trim();
+            if (!code) return;
+
+            btnRedeemPromo.disabled = true;
+            btnRedeemPromo.innerText = "...";
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/tokens/redeem`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || "Invalid or expired promo code");
+                }
+
+                bonusBalance = data.newBonusBalance;
+                if (currentUserProfile) {
+                    currentUserProfile.bonusTokens = bonusBalance;
+                }
+                updateChargeHud();
+                renderProfileView(currentUserProfile);
+                inputPromoCode.value = "";
+
+                if (promoStatus) {
+                    promoStatus.style.display = "block";
+                    promoStatus.style.background = "rgba(0, 230, 118, 0.15)";
+                    promoStatus.style.border = "1px solid #00E676";
+                    promoStatus.style.color = "#00E676";
+                    promoStatus.innerText = `🎉 Code Redeemed! +${data.bonusTokensAwarded} bonus tokens added to your vault!`;
+                }
+            } catch (err) {
+                if (promoStatus) {
+                    promoStatus.style.display = "block";
+                    promoStatus.style.background = "rgba(255, 82, 82, 0.15)";
+                    promoStatus.style.border = "1px solid #FF5252";
+                    promoStatus.style.color = "#FF8888";
+                    promoStatus.innerText = err.message;
+                }
+            } finally {
+                btnRedeemPromo.disabled = false;
+                btnRedeemPromo.innerText = "Redeem";
+            }
         }
 
         function showAuthMsg(container, text, type) {
@@ -3325,12 +3646,16 @@
                 authToken = data.token;
                 localStorage.setItem("graffiti_auth_token", authToken);
                 currentUserProfile = data.user;
+                if (data.user && data.user.bonusTokens !== undefined) {
+                    bonusBalance = data.user.bonusTokens;
+                }
 
                 if (currentUserProfile.displayName) {
                     localStorage.setItem("graffiti_nickname", currentUserProfile.displayName);
                 }
 
                 updateAccountHud();
+                updateChargeHud();
                 renderProfileView(currentUserProfile);
                 authTabProfile.style.display = "inline-block";
                 switchAuthTab("profile");
@@ -3398,17 +3723,21 @@
                 authToken = data.token;
                 localStorage.setItem("graffiti_auth_token", authToken);
                 currentUserProfile = data.user;
+                if (data.user && data.user.bonusTokens !== undefined) {
+                    bonusBalance = data.user.bonusTokens;
+                }
 
                 if (currentUserProfile.displayName) {
                     localStorage.setItem("graffiti_nickname", currentUserProfile.displayName);
                 }
 
                 updateAccountHud();
+                updateChargeHud();
                 renderProfileView(currentUserProfile);
                 authTabProfile.style.display = "inline-block";
                 switchAuthTab("profile");
 
-                let notice = `Account created! Welcome, @${currentUserProfile.username}!`;
+                let notice = `Account created! Welcome, @${currentUserProfile.username}! (+50 Welcome Bonus Tokens ✦)`;
                 if (data.linkedPixelsCount > 0 || data.linkedReservationsCount > 0) {
                     notice += ` Linked ${data.linkedPixelsCount} guest pixels & ${data.linkedReservationsCount} territories to your account.`;
                 }
@@ -3430,8 +3759,10 @@
         async function logoutUser() {
             authToken = null;
             currentUserProfile = null;
+            bonusBalance = 0;
             localStorage.removeItem("graffiti_auth_token");
             updateAccountHud();
+            updateChargeHud();
             authTabProfile.style.display = "none";
             switchAuthTab("login");
             statusDiv.innerText = "Signed out. You are now painting as a Guest.";
@@ -3450,6 +3781,16 @@
         if (authCloseBtn) authCloseBtn.addEventListener("click", closeAuthModal);
         if (authProfileDoneBtn) authProfileDoneBtn.addEventListener("click", closeAuthModal);
         if (authLogoutBtn) authLogoutBtn.addEventListener("click", logoutUser);
+        if (btnClaimDailyDrop) btnClaimDailyDrop.addEventListener("click", claimDailyDrop);
+        if (btnRedeemPromo) btnRedeemPromo.addEventListener("click", redeemPromoCode);
+        if (inputPromoCode) {
+            inputPromoCode.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    redeemPromoCode();
+                }
+            });
+        }
 
         if (authTabLogin) authTabLogin.addEventListener("click", () => switchAuthTab("login"));
         if (authTabRegister) authTabRegister.addEventListener("click", () => switchAuthTab("register"));

@@ -37,3 +37,32 @@ Accept: application/json
 ### Canvas Region PNG Export (8-Bit Indexed PNG @ 4x Scale)
 GET {{Host}}/api/canvas/export?x=0&y=0&width=200&height=200&scale=4
 
+### Territory Reservation Lease Cost Preview
+GET {{Host}}/api/tokens/cost-preview?width=50&height=50&durationMinutes=60
+Accept: application/json
+
+### Painter Bonus Token Balance (Requires JWT Bearer)
+GET {{Host}}/api/tokens/balance
+Authorization: Bearer <TOKEN>
+Accept: application/json
+
+### Claim Daily Reward Drop (+25 Bonus Tokens)
+POST {{Host}}/api/tokens/claim-daily
+Authorization: Bearer <TOKEN>
+Accept: application/json
+
+### Redeem Promo Code
+POST {{Host}}/api/tokens/redeem
+Authorization: Bearer <TOKEN>
+Content-Type: application/json
+
+{
+  "code": "WELCOME50"
+}
+
+### Token Transaction Audit History
+GET {{Host}}/api/tokens/history
+Authorization: Bearer <TOKEN>
+Accept: application/json
+
+

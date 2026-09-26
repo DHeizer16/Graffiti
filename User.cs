@@ -12,6 +12,8 @@ public class User
     public DateTimeOffset? LastLoginAt { get; set; }
     public bool IsActive { get; set; } = true;
     public string Role { get; set; } = "User"; // "User", "Moderator", "Admin"
+    public int BonusTokens { get; set; } = 0;
+    public DateTimeOffset? LastDailyClaim { get; set; }
 }
 
 public class UserProfileDto
@@ -24,6 +26,9 @@ public class UserProfileDto
     public string Role { get; set; } = "User";
     public int TotalPixelsPlaced { get; set; }
     public int ActiveReservationsCount { get; set; }
+    public int BonusTokens { get; set; }
+    public bool CanClaimDaily { get; set; }
+    public int SecondsUntilNextDailyClaim { get; set; }
 }
 
 public class AuthResponseDto

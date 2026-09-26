@@ -104,6 +104,24 @@ public class PixelBatchWriterService : BackgroundService
             sw.Stop();
             _metrics.RecordBatchFlushed(batch.Count, sw.Elapsed.TotalMilliseconds);
             _logger.LogDebug("Bulk inserted {Count} pixel placements in {ElapsedMs}ms.", batch.Count, sw.ElapsedMilliseconds);
+
+            // Reconcile consumed bonus tokens in SQL Server
+            var bonusDeductions = batch
+                .Where(p => p.UsedBonusToken && p.UserId != Guid.Empty)
+                .GroupBy(p => p.UserId)
+                .Select(g => (UserId: g.Key, Count: g.Count()));
+
+            foreach (var deduction in bonusDeductions)
+            {
+                try
+                {
+                    await _repository.DeductBonusTokensAsync(deduction.UserId, deduction.Count, "PIXEL_OVERDRIVE_DEBIT", $"Consumed {deduction.Count} pixel overdrive placement tokens");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to reconcile {Count} bonus tokens for user {UserId}", deduction.Count, deduction.UserId);
+                }
+            }
         }
         catch (Exception ex)
         {

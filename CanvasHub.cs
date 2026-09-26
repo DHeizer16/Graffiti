@@ -36,17 +36,17 @@ public class CanvasHub : Hub
             new_tokens = new_tokens - requested
             redis.call('SET', KEYS[1], string.format("%.6f", new_tokens))
             redis.call('SET', KEYS[2], tostring(math.floor(now)))
-            return {1, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), 0}
+            return {1, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), 0, 0}
         elseif bonus_balance >= requested then
             bonus_balance = bonus_balance - requested
             redis.call('SET', KEYS[1], string.format("%.6f", new_tokens))
             redis.call('SET', KEYS[2], tostring(math.floor(now)))
             redis.call('SET', KEYS[3], tostring(math.floor(bonus_balance)))
-            return {1, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), 0}
+            return {1, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), 0, 1}
         else
             local missing = requested - new_tokens
             local wait_seconds = math.ceil(missing / refill_rate)
-            return {0, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), wait_seconds}
+            return {0, string.format("%.2f", new_tokens), tostring(math.floor(bonus_balance)), wait_seconds, 0}
         end
         """;
 
@@ -201,6 +201,7 @@ public class CanvasHub : Hub
         long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         double remainingTokens = _maxCapacity;
         int bonusBalance = 0;
+        bool usedBonus = false;
 
         if (!isOwner)
         {
@@ -228,6 +229,11 @@ public class CanvasHub : Hub
                 throw new HubException($"Rate limit reached! You must wait {waitSeconds} seconds for your next charge.");
             }
 
+            if (result != null && result.Length >= 5)
+            {
+                usedBonus = (int)result[4] == 1;
+            }
+
             if (result != null && result.Length >= 3)
             {
                 if (double.TryParse((string?)result[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var t))
@@ -246,7 +252,7 @@ public class CanvasHub : Hub
 
         Guid userGuid = Guid.TryParse(clientUserId, out var parsedGuid) ? parsedGuid : Guid.NewGuid();
         var placedAt = DateTimeOffset.UtcNow;
-        var item = new PixelPlacementItem(x, y, colorId, userGuid, ipAddress, placedAt, isShadowBanned, wallGuid);
+        var item = new PixelPlacementItem(x, y, colorId, userGuid, ipAddress, placedAt, isShadowBanned, wallGuid, usedBonus);
 
         if (isShadowBanned)
         {

@@ -2,6 +2,8 @@ using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 
+using StackExchange.Redis;
+
 namespace GlobalGraffitiWall.API;
 
 [ApiController]
@@ -10,6 +12,7 @@ public class AuthController : ControllerBase
 {
     private readonly CanvasRepository _repository;
     private readonly TokenService _tokenService;
+    private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<AuthController> _logger;
 
     private static readonly Regex UsernameRegex = new(@"^[a-zA-Z0-9_]{3,30}$", RegexOptions.Compiled);
@@ -17,10 +20,12 @@ public class AuthController : ControllerBase
     public AuthController(
         CanvasRepository repository,
         TokenService tokenService,
+        IConnectionMultiplexer redis,
         ILogger<AuthController> logger)
     {
         _repository = repository;
         _tokenService = tokenService;
+        _redis = redis;
         _logger = logger;
     }
 
@@ -67,11 +72,15 @@ public class AuthController : ControllerBase
             CreatedAt = DateTimeOffset.UtcNow,
             LastLoginAt = DateTimeOffset.UtcNow,
             IsActive = true,
-            Role = role
+            Role = role,
+            BonusTokens = 50 // Welcome Stash
         };
 
         await _repository.CreateUserAsync(newUser);
-        _logger.LogInformation("New user registered: {Username} (ID: {UserId})", newUser.Username, newUser.Id);
+        await _repository.AddBonusTokensAsync(newUser.Id, 50, "WELCOME_BONUS", "Welcome to Graffiti Wall! Initial stash of 50 bonus tokens.");
+        await _redis.GetDatabase().StringSetAsync($"user:{newUser.Id}:bonus_balance", 50);
+
+        _logger.LogInformation("New user registered: {Username} (ID: {UserId}) with 50 welcome tokens", newUser.Username, newUser.Id);
 
         // Optionally link guest history if provided
         int linkedPixels = 0;
@@ -92,17 +101,7 @@ public class AuthController : ControllerBase
         var totalPlaced = await _repository.GetUserPlacementCountAsync(newUser.Id);
         var activeResCount = await _repository.GetActiveReservationCountForOwnerAsync(newUser.Id.ToString());
 
-        var profile = new UserProfileDto
-        {
-            Id = newUser.Id,
-            Username = newUser.Username,
-            DisplayName = newUser.DisplayName,
-            CreatedAt = newUser.CreatedAt,
-            LastLoginAt = newUser.LastLoginAt,
-            Role = newUser.Role,
-            TotalPixelsPlaced = totalPlaced,
-            ActiveReservationsCount = activeResCount
-        };
+        var profile = BuildProfileDto(newUser, totalPlaced, activeResCount);
 
         return Created($"/api/auth/user/{newUser.Username}", new AuthResponseDto
         {
@@ -135,6 +134,9 @@ public class AuthController : ControllerBase
 
         await _repository.UpdateUserLastLoginAsync(user.Id, DateTimeOffset.UtcNow);
 
+        // Sync Redis bonus token cache
+        await _redis.GetDatabase().StringSetAsync($"user:{user.Id}:bonus_balance", user.BonusTokens);
+
         // Link guest history if specified and different
         int linkedPixels = 0;
         int linkedReservations = 0;
@@ -152,17 +154,7 @@ public class AuthController : ControllerBase
         var totalPlaced = await _repository.GetUserPlacementCountAsync(user.Id);
         var activeResCount = await _repository.GetActiveReservationCountForOwnerAsync(user.Id.ToString());
 
-        var profile = new UserProfileDto
-        {
-            Id = user.Id,
-            Username = user.Username,
-            DisplayName = user.DisplayName,
-            CreatedAt = user.CreatedAt,
-            LastLoginAt = DateTimeOffset.UtcNow,
-            Role = user.Role,
-            TotalPixelsPlaced = totalPlaced,
-            ActiveReservationsCount = activeResCount
-        };
+        var profile = BuildProfileDto(user, totalPlaced, activeResCount);
 
         return Ok(new AuthResponseDto
         {
@@ -207,18 +199,7 @@ public class AuthController : ControllerBase
         var totalPlaced = await _repository.GetUserPlacementCountAsync(user.Id);
         var activeResCount = await _repository.GetActiveReservationCountForOwnerAsync(user.Id.ToString());
 
-        var profile = new UserProfileDto
-        {
-            Id = user.Id,
-            Username = user.Username,
-            DisplayName = user.DisplayName,
-            CreatedAt = user.CreatedAt,
-            LastLoginAt = user.LastLoginAt,
-            Role = user.Role,
-            TotalPixelsPlaced = totalPlaced,
-            ActiveReservationsCount = activeResCount
-        };
-
+        var profile = BuildProfileDto(user, totalPlaced, activeResCount);
         return Ok(profile);
     }
 
@@ -237,7 +218,28 @@ public class AuthController : ControllerBase
         var totalPlaced = await _repository.GetUserPlacementCountAsync(user.Id);
         var activeResCount = await _repository.GetActiveReservationCountForOwnerAsync(user.Id.ToString());
 
-        var profile = new UserProfileDto
+        var profile = BuildProfileDto(user, totalPlaced, activeResCount);
+        return Ok(profile);
+    }
+
+    private static (bool CanClaim, int SecondsRemaining) CalculateDailyClaimStatus(DateTimeOffset? lastDailyClaim)
+    {
+        if (!lastDailyClaim.HasValue)
+            return (true, 0);
+
+        var now = DateTimeOffset.UtcNow;
+        var nextClaim = lastDailyClaim.Value.AddHours(24);
+        if (now >= nextClaim)
+            return (true, 0);
+
+        int remaining = (int)Math.Max(0, (nextClaim - now).TotalSeconds);
+        return (false, remaining);
+    }
+
+    private static UserProfileDto BuildProfileDto(User user, int totalPlaced, int activeResCount)
+    {
+        var (canClaim, seconds) = CalculateDailyClaimStatus(user.LastDailyClaim);
+        return new UserProfileDto
         {
             Id = user.Id,
             Username = user.Username,
@@ -246,10 +248,11 @@ public class AuthController : ControllerBase
             LastLoginAt = user.LastLoginAt,
             Role = user.Role,
             TotalPixelsPlaced = totalPlaced,
-            ActiveReservationsCount = activeResCount
+            ActiveReservationsCount = activeResCount,
+            BonusTokens = user.BonusTokens,
+            CanClaimDaily = canClaim,
+            SecondsUntilNextDailyClaim = seconds
         };
-
-        return Ok(profile);
     }
 
     /// <summary>

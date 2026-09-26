@@ -8,4 +8,5 @@ public record PixelPlacementItem(
     string? IpAddress,
     DateTimeOffset PlacedAt,
     bool IsShadowBanned = false,
-    Guid? WallId = null);
+    Guid? WallId = null,
+    bool UsedBonusToken = false);

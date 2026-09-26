@@ -51,17 +51,23 @@ public class ReservationsController : ControllerBase
     public async Task<IActionResult> CancelReservation([FromBody] CancelReservationRequest request)
     {
         if (request == null || request.ReservationId == Guid.Empty)
-            return BadRequest(new { success = false, message = "Reservation ID is required." });
+            return BadRequest(new CancelReservationResponse { Success = false, Message = "Reservation ID is required." });
 
-        var (success, message) = await _reservationService.CancelReservationAsync(
+        var (success, message, refundedTokens, newBonusBalance) = await _reservationService.CancelReservationAsync(
             request.ReservationId, request.OwnerId, request.SecretKey);
 
         if (!success)
         {
-            return BadRequest(new { success, message });
+            return BadRequest(new CancelReservationResponse { Success = false, Message = message });
         }
 
-        return Ok(new { success, message });
+        return Ok(new CancelReservationResponse
+        {
+            Success = true,
+            Message = message,
+            RefundedTokens = refundedTokens,
+            NewBonusBalance = newBonusBalance
+        });
     }
 
     /// <summary>

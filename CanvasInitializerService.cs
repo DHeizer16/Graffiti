@@ -40,6 +40,7 @@ public class CanvasInitializerService : IHostedService
         await _repository.EnsureShadowBanSchemaAsync();
         await _repository.EnsureReservationSchemaAsync();
         await _repository.EnsureUserSchemaAsync();
+        await _repository.EnsureTokenSchemaAsync();
         await _repository.EnsureWallSchemaAsync();
         await _repository.EnsurePaletteSchemaAsync();
         await _paletteService.InitializeAsync();

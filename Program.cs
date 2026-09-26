@@ -73,8 +73,8 @@ builder.Services.AddHealthChecks()
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<CanvasRepository>();
 builder.Services.AddSingleton<ModerationService>();
-builder.Services.AddSingleton<ReservationService>();
 builder.Services.AddSingleton<WallService>();
+builder.Services.AddSingleton<ReservationService>();
 builder.Services.AddSingleton<PaletteService>();
 builder.Services.AddSingleton<PixelPlacementQueue>();
 builder.Services.AddHostedService<PixelBatchWriterService>();
