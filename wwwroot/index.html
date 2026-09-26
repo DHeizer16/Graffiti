@@ -245,19 +245,20 @@
             top: 14px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 85;
+            z-index: 850;
             display: flex;
             align-items: center;
             gap: 12px;
             padding: 8px 18px;
             border-radius: 8px;
             font-size: 0.88em;
-            background: rgba(22, 16, 8, 0.92);
+            background: rgba(22, 16, 8, 0.94);
             border: 1px solid #FF9800;
             color: #FFE082;
             box-shadow: 0 4px 20px rgba(255, 152, 0, 0.35);
             backdrop-filter: blur(8px);
             transition: all 0.3s ease;
+            max-width: 92vw;
         }
         #reset-banner.imminent {
             background: rgba(35, 8, 8, 0.95);
@@ -265,6 +266,12 @@
             color: #FF8A80;
             box-shadow: 0 0 25px rgba(255, 82, 82, 0.6);
             animation: reset-banner-pulse 1.2s infinite alternate;
+        }
+        #reset-banner.completed {
+            background: rgba(8, 24, 30, 0.96);
+            border-color: #00E5FF;
+            color: #E0F7FA;
+            box-shadow: 0 0 25px rgba(0, 229, 255, 0.45);
         }
         @keyframes reset-banner-pulse {
             from { box-shadow: 0 0 15px rgba(255, 82, 82, 0.4); border-color: #FF5252; }
@@ -276,6 +283,7 @@
             align-items: center;
             gap: 6px;
             letter-spacing: 0.5px;
+            white-space: nowrap;
         }
         .reset-banner-timer {
             font-family: monospace;
@@ -285,14 +293,15 @@
             padding: 2px 8px;
             border-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.15);
+            white-space: nowrap;
         }
         .reset-banner-msg {
-            max-width: 280px;
+            max-width: 450px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             font-size: 0.82em;
-            opacity: 0.85;
+            opacity: 0.9;
         }
         .reset-banner-btn {
             background: rgba(0, 229, 255, 0.15);
@@ -303,11 +312,98 @@
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.2s;
+            white-space: nowrap;
         }
         .reset-banner-btn:hover {
             background: #00E5FF;
             color: #000;
         }
+        .reset-banner-close-btn {
+            background: transparent;
+            border: none;
+            color: #888;
+            font-size: 1.1em;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .reset-banner-close-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Cyberpunk Floating Toast Container & Notifications */
+        .toast-container {
+            position: fixed;
+            top: 75px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 950;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            pointer-events: none;
+            max-width: 90vw;
+            width: 580px;
+        }
+        .cyber-toast {
+            pointer-events: auto;
+            background: rgba(18, 20, 28, 0.96);
+            border: 1px solid #00E5FF;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #fff;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 16px rgba(0, 229, 255, 0.3);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .cyber-toast.toast-reset {
+            border-color: #FFD700;
+            background: rgba(26, 22, 10, 0.96);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 25px rgba(255, 215, 0, 0.45);
+        }
+        .cyber-toast.toast-alert {
+            border-color: #FF5252;
+            background: rgba(30, 10, 10, 0.96);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 22px rgba(255, 82, 82, 0.5);
+        }
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .toast-body {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+        }
+        .toast-icon { font-size: 1.4em; flex-shrink: 0; }
+        .toast-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .toast-title { font-weight: bold; font-size: 0.92em; color: #FFD700; }
+        .cyber-toast.toast-reset .toast-title { color: #FFD700; }
+        .toast-msg { font-size: 0.82em; color: #ddd; line-height: 1.4; word-break: break-word; }
+        .toast-close-btn {
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 1.1em;
+            padding: 3px 7px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .toast-close-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
 
         /* Screen Wipe Clean-Slate Flash */
         #screen-wipe-flash {
@@ -591,7 +687,10 @@
 </head>
 <body>
 
-    <!-- Global Scheduled Reset Countdown Banner -->
+    <!-- Cyberpunk Floating Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Global Scheduled Reset / Season Banner -->
     <div id="reset-banner" style="display: none;">
         <span class="reset-banner-title">
             <span id="reset-banner-icon">⏳</span>
@@ -600,6 +699,7 @@
         <span id="reset-banner-timer" class="reset-banner-timer">00h 00m 00s</span>
         <span id="reset-banner-msg" class="reset-banner-msg" style="display: none;"></span>
         <button id="reset-banner-export-btn" class="reset-banner-btn" title="Export current canvas art snapshot before the wipe">📷 Export Art</button>
+        <button id="reset-banner-close-btn" class="reset-banner-close-btn" style="display: none;" title="Dismiss Announcement">✕</button>
     </div>
 
     <!-- Screen Wipe Clean-Slate Flash Overlay -->
@@ -612,6 +712,7 @@
                 <button id="btn-wall-hud" class="btn" style="padding: 2px 7px; font-size: 0.76em; color: #BA68C8; border-color: #6A1B9A; display: flex; align-items: center; gap: 4px;" title="Active Wall / Switch Studios [Hotkey: Shift+W]">
                     <span>🖼️</span>
                     <span id="active-wall-label">Global Wall</span>
+                    <span id="active-season-badge" style="background: rgba(0,229,255,0.2); border: 1px solid #00E5FF; color: #00E5FF; font-size: 0.72em; padding: 1px 5px; border-radius: 3px; margin-left: 2px;">S1</span>
                     <span style="font-size: 0.7em; opacity: 0.7;">▾</span>
                 </button>
                 <button id="btn-account-hud" class="btn" style="padding: 2px 7px; font-size: 0.76em; color: #00E5FF; border-color: #005577; display: flex; align-items: center; gap: 4px;" title="Painter Profile / Sign In [Hotkey: U]">
@@ -3173,12 +3274,115 @@
             }
         }
 
+        // =========================================================================
+        // Cyberpunk Floating Toast Notification System
+        // =========================================================================
+        function showCyberToast({ title, message, type = "info", icon = "ℹ️", duration = 8000, actionText = null, onAction = null }) {
+            const container = document.getElementById("toast-container");
+            if (!container) return;
+
+            const toast = document.createElement("div");
+            toast.className = `cyber-toast toast-${type}`;
+
+            let actionHtml = actionText ? `<button class="btn reset-banner-btn" style="padding: 4px 10px; font-size: 0.78em; flex-shrink: 0;" id="toast-action-btn">${escapeHtml(actionText)}</button>` : '';
+
+            toast.innerHTML = `
+                <div class="toast-body">
+                    <span class="toast-icon">${icon}</span>
+                    <div class="toast-text">
+                        ${title ? `<div class="toast-title">${escapeHtml(title)}</div>` : ''}
+                        <div class="toast-msg">${escapeHtml(message)}</div>
+                    </div>
+                </div>
+                ${actionHtml}
+                <button class="toast-close-btn" title="Dismiss">✕</button>
+            `;
+
+            if (actionText && onAction) {
+                const actBtn = toast.querySelector("#toast-action-btn");
+                if (actBtn) {
+                    actBtn.addEventListener("click", () => {
+                        try { onAction(); } catch (e) { console.error(e); }
+                        toast.remove();
+                    });
+                }
+            }
+
+            const closeBtn = toast.querySelector(".toast-close-btn");
+            if (closeBtn) closeBtn.addEventListener("click", () => toast.remove());
+
+            container.appendChild(toast);
+
+            if (duration > 0) {
+                setTimeout(() => {
+                    toast.style.opacity = "0";
+                    toast.style.transform = "translateY(-12px)";
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            }
+        }
+
+        function showResetCompletionBanner(data) {
+            if (!resetBanner) return;
+            stopResetCountdown();
+            resetBanner.classList.remove("imminent");
+            resetBanner.classList.add("completed");
+            resetBanner.style.display = "flex";
+
+            const icon = document.getElementById("reset-banner-icon");
+            const header = document.getElementById("reset-banner-header");
+            const timer = document.getElementById("reset-banner-timer");
+            const msg = document.getElementById("reset-banner-msg");
+            const exportBtn = document.getElementById("reset-banner-export-btn");
+            const closeBtn = document.getElementById("reset-banner-close-btn");
+
+            if (icon) icon.innerText = "🎉";
+            if (header) header.innerText = `RESET COMPLETE:`;
+            if (timer) {
+                timer.innerText = data.seasonName || `Season ${data.seasonNumber}`;
+                timer.style.borderColor = "#00E5FF";
+                timer.style.color = "#00E5FF";
+            }
+            if (msg) {
+                const announcement = data.reason || data.message || "Canvas wiped cleanly to blank white. All past season art is preserved in Time-Lapse Replay!";
+                msg.innerText = `📢 ${announcement}`;
+                msg.title = announcement;
+                msg.style.display = "inline";
+                msg.style.maxWidth = "450px";
+            }
+            if (exportBtn) {
+                exportBtn.innerText = "🕒 Replay Past Season";
+                exportBtn.title = "Open Time-Lapse panel to review completed season artwork";
+                exportBtn.onclick = () => {
+                    if (typeof toggleTimeline === "function") toggleTimeline(false);
+                };
+            }
+            if (closeBtn) {
+                closeBtn.style.display = "inline-block";
+                closeBtn.onclick = () => {
+                    resetBanner.style.display = "none";
+                };
+            }
+        }
+
         function handleCanvasResetScheduled(data) {
             scheduledResetTimestamp = new Date(data.scheduledResetUtc).getTime();
             scheduledResetMsg = data.message || "";
             startResetCountdown();
-            statusDiv.innerText = `⏳ Canvas Reset Scheduled for ${new Date(data.scheduledResetUtc).toLocaleTimeString()}`;
-            statusDiv.style.color = "#FFA726";
+
+            // Dedicated Toast Notification (cannot be overwritten by statusDiv)
+            showCyberToast({
+                title: "⏳ Global Wall Reset Scheduled",
+                message: `${data.message ? `"${data.message}" — ` : ''}Canvas resets to pure blank white at ${new Date(data.scheduledResetUtc).toLocaleString()}. Export your artwork now!`,
+                type: "reset",
+                icon: "⏳",
+                duration: 18000,
+                actionText: "📷 Export Art Now",
+                onAction: () => {
+                    if (typeof openExportModal === "function") openExportModal();
+                }
+            });
+
             if (modModal && modModal.style.display === "flex") {
                 renderResetTab();
             }
@@ -3187,19 +3391,23 @@
         function handleCanvasResetCancelled(data) {
             stopResetCountdown();
             if (resetBanner) resetBanner.style.display = "none";
-            statusDiv.innerText = `Scheduled Canvas Reset was cancelled by ${data.cancelledBy || 'Admin'}.`;
-            statusDiv.style.color = "#00E5FF";
+
+            // Dedicated Toast Notification
+            showCyberToast({
+                title: "Canvas Reset Cancelled",
+                message: `The scheduled canvas wipe countdown was cancelled by ${data.cancelledBy || 'Admin'}. Drawing continues uninterrupted!`,
+                type: "info",
+                icon: "ℹ️",
+                duration: 12000
+            });
+
             if (modModal && modModal.style.display === "flex") {
                 renderResetTab();
             }
         }
 
         function handleCanvasResetExecuted(data) {
-            // 1. Stop and hide countdown banner
-            stopResetCountdown();
-            if (resetBanner) resetBanner.style.display = "none";
-
-            // 2. Play white clean-slate flash animation
+            // 1. Play white clean-slate flash animation
             const flash = document.getElementById("screen-wipe-flash");
             if (flash) {
                 flash.classList.add("flash-active");
@@ -3208,28 +3416,45 @@
                 }, 100);
             }
 
-            // 3. Clear all cached tiles
+            // 2. Clear all cached tiles
             tileCache.clear();
             tileLoadPromises.clear();
 
-            // 4. Wipe minimap
+            // 3. Wipe minimap
             if (minimapCtx) {
                 minimapCtx.fillStyle = paletteColors[0] || "#FFFFFF";
                 minimapCtx.fillRect(0, 0, 160, 160);
             }
 
-            // 5. Clear global wall reservations
+            // 4. Clear global wall reservations
             activeReservations = activeReservations.filter(r => r.wallId != null);
 
-            // 6. Force immediate re-render
+            // 5. Force immediate re-render
             render();
             renderMinimap();
 
-            // 7. Show toast / alert
-            const seasonMsg = `⚡ Global Wall Wiped! Started Season #${data.seasonNumber}: '${data.seasonName}'`;
-            statusDiv.innerText = seasonMsg;
-            statusDiv.style.color = "#FFD700";
-            console.log(seasonMsg);
+            // 6. Update Season HUD Badge
+            const sBadge = document.getElementById("active-season-badge");
+            if (sBadge) {
+                sBadge.innerText = `S${data.seasonNumber}`;
+                sBadge.title = `Current Season: ${data.seasonName || `Season ${data.seasonNumber}`}`;
+            }
+
+            // 7. Show persistent Reset Completed Banner (instead of hiding it)
+            showResetCompletionBanner(data);
+
+            // 8. Show prominent Cyber Toast (guaranteed not to be overwritten by statusDiv)
+            showCyberToast({
+                title: `🎉 Global Wall Reset Complete — Season #${data.seasonNumber} Live!`,
+                message: data.reason || data.message || `Canvas wiped cleanly to pure white. All past season art is preserved in Time-Lapse Replay.`,
+                type: "reset",
+                icon: "⚡",
+                duration: 30000,
+                actionText: "🕒 Replay Past Season",
+                onAction: () => {
+                    if (typeof toggleTimeline === "function") toggleTimeline(false);
+                }
+            });
 
             if (modModal && modModal.style.display === "flex") {
                 renderResetTab();
@@ -3238,6 +3463,23 @@
 
         function startResetCountdown() {
             stopResetCountdown();
+            if (resetBanner) {
+                resetBanner.classList.remove("completed");
+                const icon = document.getElementById("reset-banner-icon");
+                const header = document.getElementById("reset-banner-header");
+                const exportBtn = document.getElementById("reset-banner-export-btn");
+                const closeBtn = document.getElementById("reset-banner-close-btn");
+                if (icon) icon.innerText = "⏳";
+                if (header) header.innerText = "GLOBAL WALL RESET IN:";
+                if (exportBtn) {
+                    exportBtn.innerText = "📷 Export Art";
+                    exportBtn.title = "Export current canvas art snapshot before the wipe";
+                    exportBtn.onclick = () => {
+                        if (typeof openExportModal === "function") openExportModal();
+                    };
+                }
+                if (closeBtn) closeBtn.style.display = "none";
+            }
             updateResetBannerUI();
             resetCountdownInterval = setInterval(updateResetBannerUI, 1000);
         }
@@ -3253,7 +3495,10 @@
         function updateResetBannerUI() {
             if (!resetBanner) return;
             if (!scheduledResetTimestamp) {
-                resetBanner.style.display = "none";
+                // If not in completed state, hide
+                if (!resetBanner.classList.contains("completed")) {
+                    resetBanner.style.display = "none";
+                }
                 return;
             }
 
@@ -3287,8 +3532,11 @@
             }
 
             resetBannerTimer.innerText = timeStr;
+            resetBannerTimer.style.borderColor = "";
+            resetBannerTimer.style.color = "";
+
             if (scheduledResetMsg) {
-                resetBannerMsg.innerText = scheduledResetMsg;
+                resetBannerMsg.innerText = `📢 "${scheduledResetMsg}"`;
                 resetBannerMsg.title = scheduledResetMsg;
                 resetBannerMsg.style.display = "inline";
             } else {
@@ -3306,6 +3554,14 @@
                 const res = await fetch(`${API_BASE_URL}/api/canvas/reset-status`);
                 if (!res.ok) return;
                 const data = await res.json();
+
+                // Update Season Badge in HUD
+                const sBadge = document.getElementById("active-season-badge");
+                if (sBadge && data.currentSeasonNumber) {
+                    sBadge.innerText = `S${data.currentSeasonNumber}`;
+                    sBadge.title = `Current Season: ${data.currentSeasonName || `Season ${data.currentSeasonNumber}`}`;
+                }
+
                 if (data.isResetScheduled && data.scheduledResetUtc) {
                     scheduledResetTimestamp = new Date(data.scheduledResetUtc).getTime();
                     scheduledResetMsg = data.message || "";
