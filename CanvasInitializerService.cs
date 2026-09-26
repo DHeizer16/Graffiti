@@ -9,6 +9,7 @@ public class CanvasInitializerService : IHostedService
     private readonly ModerationService _moderationService;
     private readonly ReservationService _reservationService;
     private readonly PaletteService _paletteService;
+    private readonly CanvasResetService _resetService;
     private readonly ILogger<CanvasInitializerService> _logger;
 
     private const string CanvasRedisKey = "canvas:global_state";
@@ -23,6 +24,7 @@ public class CanvasInitializerService : IHostedService
         ModerationService moderationService,
         ReservationService reservationService,
         PaletteService paletteService,
+        CanvasResetService resetService,
         ILogger<CanvasInitializerService> logger)
     {
         _redis = redis;
@@ -30,6 +32,7 @@ public class CanvasInitializerService : IHostedService
         _moderationService = moderationService;
         _reservationService = reservationService;
         _paletteService = paletteService;
+        _resetService = resetService;
         _logger = logger;
     }
 
@@ -43,9 +46,11 @@ public class CanvasInitializerService : IHostedService
         await _repository.EnsureTokenSchemaAsync();
         await _repository.EnsureWallSchemaAsync();
         await _repository.EnsurePaletteSchemaAsync();
+        await _repository.EnsureSeasonSchemaAsync();
         await _paletteService.InitializeAsync();
         await _moderationService.InitializeAsync();
         await _reservationService.InitializeAsync();
+        await _resetService.InitializeAsync();
 
         var db = _redis.GetDatabase();
 
@@ -71,9 +76,12 @@ public class CanvasInitializerService : IHostedService
             buffer = new byte[TotalBytes];
         }
 
-        // 2. Rehydrate in-memory buffer with SQL Server pixel history
-        _logger.LogInformation("Syncing Redis buffer with SQL Server pixel history (8-bit)...");
-        var placements = await _repository.GetAllPixelPlacementsAsync();
+        // 2. Rehydrate in-memory buffer with current season pixel history from SQL Server
+        var currentSeason = await _repository.GetCurrentSeasonAsync();
+        _logger.LogInformation("Syncing Redis buffer with SQL Server pixel history for {Season} (since {StartedAt:u})...",
+            currentSeason.Name, currentSeason.StartedAt);
+        var placements = await _repository.GetAllPixelPlacementsAsync(null, currentSeason.StartedAt);
+
 
         int rehydratedCount = 0;
         foreach (var pixel in placements)

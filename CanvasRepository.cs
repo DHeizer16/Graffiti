@@ -61,26 +61,29 @@ public class CanvasRepository
 
     /// <summary>
     /// Fetches all non-banned historical pixel placements from SQL Server to sync Redis state on boot.
+    /// Can optionally filter by sinceUtc (e.g. current season start).
     /// </summary>
-    public async Task<IEnumerable<(int X, int Y, byte ColorId)>> GetAllPixelPlacementsAsync(Guid? wallId = null)
+    public async Task<IEnumerable<(int X, int Y, byte ColorId)>> GetAllPixelPlacementsAsync(Guid? wallId = null, DateTimeOffset? sinceUtc = null)
     {
         using IDbConnection db = new SqlConnection(_connectionString);
 
+        string sinceFilter = sinceUtc.HasValue ? "AND placed_at >= @SinceUtc" : "";
+
         string sql = wallId == null
-            ? """
+            ? $"""
               SELECT x AS X, y AS Y, color_id AS ColorId
               FROM pixel_placements WITH (NOLOCK)
-              WHERE is_shadow_banned = 0 AND wall_id IS NULL
+              WHERE is_shadow_banned = 0 AND wall_id IS NULL {sinceFilter}
               ORDER BY placed_at ASC;
               """
-            : """
+            : $"""
               SELECT x AS X, y AS Y, color_id AS ColorId
               FROM pixel_placements WITH (NOLOCK)
-              WHERE is_shadow_banned = 0 AND wall_id = @WallId
+              WHERE is_shadow_banned = 0 AND wall_id = @WallId {sinceFilter}
               ORDER BY placed_at ASC;
               """;
 
-        return await db.QueryAsync<(int X, int Y, byte ColorId)>(sql, new { WallId = wallId });
+        return await db.QueryAsync<(int X, int Y, byte ColorId)>(sql, new { WallId = wallId, SinceUtc = sinceUtc });
     }
 
     /// <summary>
@@ -1146,7 +1149,269 @@ public class CanvasRepository
             """;
         return await db.QueryAsync<PaletteColor>(sql);
     }
+
+    // =========================================================================
+    // Canvas Seasons & Scheduled Resets
+    // =========================================================================
+
+    /// <summary>
+    /// Ensures that canvas_seasons, canvas_scheduled_resets tables exist, and seeds Season 1 if needed.
+    /// </summary>
+    public async Task EnsureSeasonSchemaAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "006_create_canvas_seasons.sql");
+        if (!File.Exists(scriptPath))
+        {
+            scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "006_create_canvas_seasons.sql");
+        }
+
+        if (File.Exists(scriptPath))
+        {
+            string rawSql = await File.ReadAllTextAsync(scriptPath);
+            var batches = rawSql.Split(new[] { "\nGO\r", "\nGO\n", "\r\nGO\r\n", "\nGO" }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var batch in batches)
+            {
+                var trimmed = batch.Trim();
+                if (!string.IsNullOrWhiteSpace(trimmed))
+                {
+                    await db.ExecuteAsync(trimmed);
+                }
+            }
+        }
+        else
+        {
+            const string createTablesSql = """
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'canvas_seasons')
+                BEGIN
+                    CREATE TABLE canvas_seasons (
+                        season_id INT IDENTITY(1,1) PRIMARY KEY,
+                        season_number INT NOT NULL UNIQUE,
+                        name NVARCHAR(100) NOT NULL,
+                        started_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+                        ended_at DATETIMEOFFSET NULL,
+                        reset_by NVARCHAR(100) NULL,
+                        reset_reason NVARCHAR(255) NULL,
+                        total_pixels_placed BIGINT NOT NULL DEFAULT 0,
+                        archive_export_url NVARCHAR(500) NULL
+                    );
+                    CREATE INDEX IX_canvas_seasons_number ON canvas_seasons(season_number);
+                    CREATE INDEX IX_canvas_seasons_active ON canvas_seasons(ended_at);
+                    INSERT INTO canvas_seasons (season_number, name, started_at)
+                    VALUES (1, 'Season 1: Genesis', '2000-01-01 00:00:00 +00:00');
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'canvas_scheduled_resets')
+                BEGIN
+                    CREATE TABLE canvas_scheduled_resets (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        scheduled_reset_utc DATETIMEOFFSET NOT NULL,
+                        scheduled_by NVARCHAR(100) NOT NULL,
+                        announcement_message NVARCHAR(500) NULL,
+                        created_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+                        is_cancelled BIT NOT NULL DEFAULT 0,
+                        cancelled_at DATETIMEOFFSET NULL,
+                        cancelled_by NVARCHAR(100) NULL,
+                        is_executed BIT NOT NULL DEFAULT 0,
+                        executed_at DATETIMEOFFSET NULL
+                    );
+                    CREATE INDEX IX_canvas_scheduled_resets_status 
+                    ON canvas_scheduled_resets (is_cancelled, is_executed, scheduled_reset_utc);
+                END
+
+                IF EXISTS (SELECT * FROM sys.tables WHERE name = 'pixel_placements')
+                BEGIN
+                    IF COL_LENGTH('pixel_placements', 'season_id') IS NULL
+                    BEGIN
+                        ALTER TABLE pixel_placements ADD season_id INT NOT NULL DEFAULT 1;
+                        CREATE NONCLUSTERED INDEX IX_pixel_placements_season 
+                        ON pixel_placements (season_id, is_shadow_banned, placed_at);
+                    END
+                END
+                """;
+            await db.ExecuteAsync(createTablesSql);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves the current active canvas season (ended_at IS NULL).
+    /// </summary>
+    public async Task<CanvasSeason> GetCurrentSeasonAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            SELECT TOP 1
+                season_id AS SeasonId,
+                season_number AS SeasonNumber,
+                name AS Name,
+                started_at AS StartedAt,
+                ended_at AS EndedAt,
+                reset_by AS ResetBy,
+                reset_reason AS ResetReason,
+                total_pixels_placed AS TotalPixelsPlaced,
+                archive_export_url AS ArchiveExportUrl
+            FROM canvas_seasons WITH (NOLOCK)
+            WHERE ended_at IS NULL
+            ORDER BY season_number DESC;
+            """;
+        var season = await db.QuerySingleOrDefaultAsync<CanvasSeason>(sql);
+        if (season == null)
+        {
+            // Fallback: seed or return default Season 1
+            season = new CanvasSeason
+            {
+                SeasonNumber = 1,
+                Name = "Season 1: Genesis",
+                StartedAt = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)
+            };
+        }
+        return season;
+    }
+
+    /// <summary>
+    /// Closes the current season and starts the next season atomically.
+    /// </summary>
+    public async Task<CanvasSeason> CreateNextSeasonAsync(string resetBy, string reason)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        var now = DateTimeOffset.UtcNow;
+
+        const string sql = """
+            DECLARE @CurrentSeasonNumber INT;
+            SELECT TOP 1 @CurrentSeasonNumber = season_number
+            FROM canvas_seasons WITH (UPDLOCK, HOLDLOCK)
+            WHERE ended_at IS NULL
+            ORDER BY season_number DESC;
+
+            IF @CurrentSeasonNumber IS NULL
+                SET @CurrentSeasonNumber = 1;
+
+            -- Close current season
+            UPDATE canvas_seasons
+            SET ended_at = @Now,
+                reset_by = @ResetBy,
+                reset_reason = @Reason,
+                total_pixels_placed = (
+                    SELECT COUNT(*) 
+                    FROM pixel_placements WITH (NOLOCK) 
+                    WHERE is_shadow_banned = 0 AND wall_id IS NULL AND placed_at >= started_at AND placed_at <= @Now
+                )
+            WHERE ended_at IS NULL;
+
+            -- Insert next season
+            DECLARE @NextSeasonNumber INT = @CurrentSeasonNumber + 1;
+            DECLARE @NextSeasonName NVARCHAR(100) = 'Season ' + CAST(@NextSeasonNumber AS NVARCHAR(10));
+
+            INSERT INTO canvas_seasons (season_number, name, started_at)
+            OUTPUT 
+                INSERTED.season_id AS SeasonId,
+                INSERTED.season_number AS SeasonNumber,
+                INSERTED.name AS Name,
+                INSERTED.started_at AS StartedAt,
+                INSERTED.ended_at AS EndedAt,
+                INSERTED.reset_by AS ResetBy,
+                INSERTED.reset_reason AS ResetReason,
+                INSERTED.total_pixels_placed AS TotalPixelsPlaced,
+                INSERTED.archive_export_url AS ArchiveExportUrl
+            VALUES (@NextSeasonNumber, @NextSeasonName, @Now);
+            """;
+
+        return await db.QuerySingleAsync<CanvasSeason>(sql, new { Now = now, ResetBy = resetBy, Reason = reason });
+    }
+
+    /// <summary>
+    /// Schedules a future canvas reset, cancelling any existing unexecuted/uncancelled resets.
+    /// </summary>
+    public async Task<CanvasScheduledReset> SaveScheduledResetAsync(DateTimeOffset scheduledUtc, string scheduledBy, string? message)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        var now = DateTimeOffset.UtcNow;
+
+        const string sql = """
+            -- Cancel any existing pending resets
+            UPDATE canvas_scheduled_resets
+            SET is_cancelled = 1, cancelled_at = @Now, cancelled_by = @ScheduledBy
+            WHERE is_cancelled = 0 AND is_executed = 0;
+
+            -- Insert new scheduled reset
+            INSERT INTO canvas_scheduled_resets (scheduled_reset_utc, scheduled_by, announcement_message, created_at, is_cancelled, is_executed)
+            OUTPUT
+                INSERTED.id AS Id,
+                INSERTED.scheduled_reset_utc AS ScheduledResetUtc,
+                INSERTED.scheduled_by AS ScheduledBy,
+                INSERTED.announcement_message AS AnnouncementMessage,
+                INSERTED.created_at AS CreatedAt,
+                INSERTED.is_cancelled AS IsCancelled,
+                INSERTED.is_executed AS IsExecuted
+            VALUES (@ScheduledUtc, @ScheduledBy, @Message, @Now, 0, 0);
+            """;
+
+        return await db.QuerySingleAsync<CanvasScheduledReset>(sql, new { ScheduledUtc = scheduledUtc, ScheduledBy = scheduledBy, Message = message, Now = now });
+    }
+
+    /// <summary>
+    /// Cancels active scheduled reset.
+    /// </summary>
+    public async Task<bool> CancelScheduledResetAsync(string cancelledBy)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        var now = DateTimeOffset.UtcNow;
+
+        const string sql = """
+            UPDATE canvas_scheduled_resets
+            SET is_cancelled = 1, cancelled_at = @Now, cancelled_by = @CancelledBy
+            WHERE is_cancelled = 0 AND is_executed = 0;
+            """;
+        int rows = await db.ExecuteAsync(sql, new { Now = now, CancelledBy = cancelledBy });
+        return rows > 0;
+    }
+
+    /// <summary>
+    /// Retrieves active pending scheduled reset if one exists.
+    /// </summary>
+    public async Task<CanvasScheduledReset?> GetActiveScheduledResetAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = """
+            SELECT TOP 1
+                id AS Id,
+                scheduled_reset_utc AS ScheduledResetUtc,
+                scheduled_by AS ScheduledBy,
+                announcement_message AS AnnouncementMessage,
+                created_at AS CreatedAt,
+                is_cancelled AS IsCancelled,
+                cancelled_at AS CancelledAt,
+                cancelled_by AS CancelledBy,
+                is_executed AS IsExecuted,
+                executed_at AS ExecutedAt
+            FROM canvas_scheduled_resets WITH (NOLOCK)
+            WHERE is_cancelled = 0 AND is_executed = 0
+            ORDER BY scheduled_reset_utc ASC;
+            """;
+        return await db.QuerySingleOrDefaultAsync<CanvasScheduledReset>(sql);
+    }
+
+    /// <summary>
+    /// Marks a scheduled reset as executed.
+    /// </summary>
+    public async Task MarkScheduledResetExecutedAsync(int id)
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = "UPDATE canvas_scheduled_resets SET is_executed = 1, executed_at = SYSDATETIMEOFFSET() WHERE id = @Id;";
+        await db.ExecuteAsync(sql, new { Id = id });
+    }
+
+    /// <summary>
+    /// Deactivates all active territory reservations on the primary global wall (wall_id IS NULL).
+    /// </summary>
+    public async Task<int> DeactivateAllGlobalReservationsAsync()
+    {
+        using IDbConnection db = new SqlConnection(_connectionString);
+        const string sql = "UPDATE canvas_reservations SET is_active = 0 WHERE wall_id IS NULL AND is_active = 1;";
+        return await db.ExecuteAsync(sql);
+    }
 }
+
 
 public class PixelPlacementHistoryDto
 {

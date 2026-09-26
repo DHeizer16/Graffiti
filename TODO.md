@@ -121,7 +121,7 @@ This document tracks planned development phases and architecture enhancements fo
   - Automatic Admin Seeding: Green-field registrations auto-promote the 1st registered user (`userCount == 0`) to `Admin`. Existing databases auto-promote the earliest registered user in `EnsureUserSchemaAsync()`.
   - Authenticated Caller Identity: The `bannedBy` audit trail in `ShadowBanAsync` automatically resolves from caller JWT claims (`User.FindFirstValue(ClaimTypes.Name)`).
   - Frontend UI Lockdown: The `[🛡️ Mod]` HUD button and Inspector `[🚨 Shadow Ban]` button are completely hidden by default and only rendered for authenticated users with `Admin` or `Moderator` roles. Unauthorized hotkeys (`Shift + M`) are rejected with an access-denied alert. All moderation fetches attach JWT bearer tokens via `getAuthHeaders()`.
-- [ ] **Scheduled Global Wall Reset & Wipe (Admin Countdown & Clean Slate)**:
+- [x] **Scheduled Global Wall Reset & Wipe (Admin Countdown & Clean Slate)**:
   - **Definition & Purpose**:
     - Complete clean slate wipe of the primary Global Wall back to pure blank white (`0x00` / Color ID 0).
     - Allows the community canvas to run in "Seasons" or periodic events (similar to the r/place finale whiteout), giving players a fresh blank canvas to create new art.

@@ -124,6 +124,16 @@ public class CanvasController : ControllerBase
     }
 
     /// <summary>
+    /// Returns current scheduled canvas reset status, countdown timer, and season details.
+    /// </summary>
+    [HttpGet("reset-status")]
+    public async Task<IActionResult> GetResetStatus([FromServices] CanvasResetService resetService)
+    {
+        var status = await resetService.GetResetStatusAsync();
+        return Ok(status);
+    }
+
+    /// <summary>
     /// Retrieves the canvas color palette.
     /// By default returns all 256 colors, or set activeOnly=true for current painting palette.
     /// </summary>

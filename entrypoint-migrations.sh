@@ -41,6 +41,7 @@ SCRIPTS=(
     "/scripts/003_create_canvas_walls.sql"
     "/scripts/004_create_canvas_palette.sql"
     "/scripts/005_create_token_system.sql"
+    "/scripts/006_create_canvas_seasons.sql"
 )
 
 for script in "${SCRIPTS[@]}"; do

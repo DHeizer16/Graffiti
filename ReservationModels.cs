@@ -17,6 +17,7 @@ public class CanvasReservation
     public bool IsActive { get; set; } = true;
     public int TokenCost { get; set; } = 0;
     public int RefundedTokens { get; set; } = 0;
+    public Guid? WallId { get; set; }
 
     public int Width => Math.Abs(X2 - X1) + 1;
     public int Height => Math.Abs(Y2 - Y1) + 1;
@@ -54,6 +55,7 @@ public class CanvasReservation
             Area = Area,
             Label = Label,
             TokenCost = TokenCost,
+            WallId = WallId,
             CreatedAt = CreatedAt,
             ExpiresAt = ExpiresAt,
             SecondsRemaining = remaining
@@ -79,6 +81,7 @@ public class ReservationDto
     public Guid Id { get; set; }
     public string OwnerId { get; set; } = string.Empty;
     public string OwnerName { get; set; } = string.Empty;
+    public Guid? WallId { get; set; }
     public int X1 { get; set; }
     public int Y1 { get; set; }
     public int X2 { get; set; }

@@ -76,10 +76,12 @@ builder.Services.AddSingleton<ModerationService>();
 builder.Services.AddSingleton<WallService>();
 builder.Services.AddSingleton<ReservationService>();
 builder.Services.AddSingleton<PaletteService>();
+builder.Services.AddSingleton<CanvasResetService>();
 builder.Services.AddSingleton<PixelPlacementQueue>();
 builder.Services.AddHostedService<PixelBatchWriterService>();
 builder.Services.AddHostedService<CanvasInitializerService>();
 builder.Services.AddHostedService<ReservationExpirationService>();
+builder.Services.AddHostedService<CanvasResetWorkerService>();
 
 var app = builder.Build();
 

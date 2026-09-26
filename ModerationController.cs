@@ -136,7 +136,86 @@ public class ModerationController : ControllerBase
             message = $"User '{request.Username}' role updated to {normalizedRole}."
         });
     }
+
+    /// <summary>
+    /// Schedules a future global canvas reset with a live countdown banner (Admin only).
+    /// </summary>
+    [HttpPost("schedule-reset")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ScheduleReset(
+        [FromBody] ScheduleResetRequest request,
+        [FromServices] CanvasResetService resetService)
+    {
+        if (request.ScheduledResetUtc <= DateTimeOffset.UtcNow)
+        {
+            return BadRequest(new { error = "Scheduled reset time must be in the future." });
+        }
+
+        var adminName = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "Admin";
+
+        try
+        {
+            var record = await resetService.ScheduleResetAsync(request.ScheduledResetUtc, adminName, request.AnnouncementMessage);
+            return Ok(new
+            {
+                success = true,
+                message = $"Global canvas reset scheduled for {request.ScheduledResetUtc:u} by {adminName}.",
+                scheduledResetUtc = record.ScheduledResetUtc,
+                announcementMessage = record.AnnouncementMessage,
+                scheduledBy = record.ScheduledBy
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Cancels a pending scheduled global canvas reset (Admin only).
+    /// </summary>
+    [HttpPost("cancel-reset")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> CancelReset([FromServices] CanvasResetService resetService)
+    {
+        var adminName = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "Admin";
+        await resetService.CancelResetAsync(adminName);
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Scheduled canvas reset cancelled by {adminName}."
+        });
+    }
+
+    /// <summary>
+    /// Executes an immediate emergency clean slate wipe of the global canvas (Admin only).
+    /// </summary>
+    [HttpPost("execute-reset-now")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ExecuteResetNow(
+        [FromBody] ExecuteResetNowRequest? request,
+        [FromServices] CanvasResetService resetService)
+    {
+        var adminName = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "Admin";
+        var reason = !string.IsNullOrWhiteSpace(request?.Reason)
+            ? request.Reason.Trim()
+            : "Immediate administrative emergency wipe";
+
+        var newSeason = await resetService.ExecuteResetAsync(adminName, reason);
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Global canvas wiped cleanly to blank white. Started Season #{newSeason.SeasonNumber}: '{newSeason.Name}'.",
+            seasonNumber = newSeason.SeasonNumber,
+            seasonName = newSeason.Name,
+            startedAt = newSeason.StartedAt,
+            resetBy = adminName
+        });
+    }
 }
+
 
 public class SetRoleRequest
 {

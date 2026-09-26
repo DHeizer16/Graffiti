@@ -515,4 +515,23 @@ public class ReservationService
             await _repository.ExpireOldReservationsAsync(now);
         }
     }
+
+    /// <summary>
+    /// Releases and expires all active reservations on the primary global wall (WallId == null).
+    /// Used during canvas season resets.
+    /// </summary>
+    public async Task ReleaseAllGlobalWallReservationsAsync()
+    {
+        var globalReservations = _activeReservations.Values.Where(r => r.WallId == null).ToList();
+        foreach (var res in globalReservations)
+        {
+            if (_activeReservations.TryRemove(res.ReservationId, out _))
+            {
+                _logger.LogInformation("Global wall reservation {Id} ('{Label}') released due to canvas reset.", res.ReservationId, res.Label);
+                await _hubContext.Clients.All.SendAsync("ZoneExpired", res.ReservationId);
+            }
+        }
+        await _repository.DeactivateAllGlobalReservationsAsync();
+    }
 }
+

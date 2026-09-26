@@ -239,6 +239,94 @@
             text-shadow: 0 0 2px #000;
         }
 
+        /* Canvas Reset & Scheduled Wipe Countdown Banner */
+        #reset-banner {
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 85;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 0.88em;
+            background: rgba(22, 16, 8, 0.92);
+            border: 1px solid #FF9800;
+            color: #FFE082;
+            box-shadow: 0 4px 20px rgba(255, 152, 0, 0.35);
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+        }
+        #reset-banner.imminent {
+            background: rgba(35, 8, 8, 0.95);
+            border-color: #FF5252;
+            color: #FF8A80;
+            box-shadow: 0 0 25px rgba(255, 82, 82, 0.6);
+            animation: reset-banner-pulse 1.2s infinite alternate;
+        }
+        @keyframes reset-banner-pulse {
+            from { box-shadow: 0 0 15px rgba(255, 82, 82, 0.4); border-color: #FF5252; }
+            to { box-shadow: 0 0 35px rgba(255, 82, 82, 0.85); border-color: #FF1744; }
+        }
+        .reset-banner-title {
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 0.5px;
+        }
+        .reset-banner-timer {
+            font-family: monospace;
+            font-weight: 800;
+            font-size: 1.15em;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .reset-banner-msg {
+            max-width: 280px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 0.82em;
+            opacity: 0.85;
+        }
+        .reset-banner-btn {
+            background: rgba(0, 229, 255, 0.15);
+            border: 1px solid #00E5FF;
+            color: #00E5FF;
+            padding: 3px 9px;
+            font-size: 0.78em;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .reset-banner-btn:hover {
+            background: #00E5FF;
+            color: #000;
+        }
+
+        /* Screen Wipe Clean-Slate Flash */
+        #screen-wipe-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #FFFFFF;
+            z-index: 999;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 1.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+        }
+        #screen-wipe-flash.flash-active {
+            opacity: 0.95;
+            transition: none;
+        }
+
         /* Moderation Modal UI */
         #moderation-modal {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -503,6 +591,20 @@
 </head>
 <body>
 
+    <!-- Global Scheduled Reset Countdown Banner -->
+    <div id="reset-banner" style="display: none;">
+        <span class="reset-banner-title">
+            <span id="reset-banner-icon">⏳</span>
+            <span id="reset-banner-header">GLOBAL WALL RESET IN:</span>
+        </span>
+        <span id="reset-banner-timer" class="reset-banner-timer">00h 00m 00s</span>
+        <span id="reset-banner-msg" class="reset-banner-msg" style="display: none;"></span>
+        <button id="reset-banner-export-btn" class="reset-banner-btn" title="Export current canvas art snapshot before the wipe">📷 Export Art</button>
+    </div>
+
+    <!-- Screen Wipe Clean-Slate Flash Overlay -->
+    <div id="screen-wipe-flash"></div>
+
     <div id="hud">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
             <div id="coords">X: 0 | Y: 0 (100%)</div>
@@ -748,6 +850,7 @@
                 <button id="mod-tab-bans" class="btn mod-tab-btn btn-active">Active Bans</button>
                 <button id="mod-tab-audit" class="btn mod-tab-btn">Intercepted Graffiti (Audit)</button>
                 <button id="mod-tab-add" class="btn mod-tab-btn">+ Manual Ban</button>
+                <button id="mod-tab-reset" class="btn mod-tab-btn" style="display: none; border-color: #FF9800; color: #FFB74D;">⏳ Canvas Reset</button>
             </div>
 
             <div id="mod-content" class="mod-content">
@@ -2284,9 +2387,24 @@
                 }
             });
 
+            connection.on("CanvasResetScheduled", (data) => {
+                handleCanvasResetScheduled(data);
+            });
+
+            connection.on("CanvasResetCancelled", (data) => {
+                handleCanvasResetCancelled(data);
+            });
+
+            connection.on("CanvasResetExecuted", (data) => {
+                handleCanvasResetExecuted(data);
+            });
+
             connection.start().then(() => {
                 statusDiv.innerText = "Live Connected. Dynamic tiles active.";
                 statusDiv.style.color = "#00E5FF";
+
+                // Fetch current scheduled reset status
+                fetchResetStatus();
 
                 // Fetch initial charge status
                 connection.invoke("GetChargeStatus")
@@ -2638,6 +2756,19 @@
         const modTabBans = document.getElementById("mod-tab-bans");
         const modTabAudit = document.getElementById("mod-tab-audit");
         const modTabAdd = document.getElementById("mod-tab-add");
+        const modTabReset = document.getElementById("mod-tab-reset");
+
+        // Canvas Reset Banner elements
+        const resetBanner = document.getElementById("reset-banner");
+        const resetBannerTimer = document.getElementById("reset-banner-timer");
+        const resetBannerMsg = document.getElementById("reset-banner-msg");
+        const resetBannerExportBtn = document.getElementById("reset-banner-export-btn");
+
+        if (resetBannerExportBtn) {
+            resetBannerExportBtn.addEventListener("click", () => {
+                if (typeof openExportModal === "function") openExportModal();
+            });
+        }
 
         function getAuthHeaders(extra = {}) {
             const h = { ...extra };
@@ -2651,6 +2782,9 @@
             if (!isModeratorOrAdmin()) {
                 alert("Access Denied: Moderation controls require an Admin or Moderator account.");
                 return;
+            }
+            if (modTabReset) {
+                modTabReset.style.display = (currentUserProfile && currentUserProfile.role === "Admin") ? "inline-block" : "none";
             }
             modModal.style.display = "flex";
             switchModTab("bans");
@@ -2666,9 +2800,12 @@
         modTabBans.addEventListener("click", () => switchModTab("bans"));
         modTabAudit.addEventListener("click", () => switchModTab("audit"));
         modTabAdd.addEventListener("click", () => switchModTab("add"));
+        if (modTabReset) {
+            modTabReset.addEventListener("click", () => switchModTab("reset"));
+        }
 
         function switchModTab(tab) {
-            [modTabBans, modTabAudit, modTabAdd].forEach(btn => btn.classList.remove("btn-active"));
+            [modTabBans, modTabAudit, modTabAdd, modTabReset].forEach(btn => btn && btn.classList.remove("btn-active"));
             if (tab === "bans") {
                 modTabBans.classList.add("btn-active");
                 loadActiveBans();
@@ -2678,6 +2815,9 @@
             } else if (tab === "add") {
                 modTabAdd.classList.add("btn-active");
                 renderAddBanForm();
+            } else if (tab === "reset") {
+                if (modTabReset) modTabReset.classList.add("btn-active");
+                renderResetTab();
             }
         }
 
@@ -2818,6 +2958,362 @@
                     alert(`Failed to apply ban: ${err.message}`);
                 }
             });
+        }
+
+        // =========================================================================
+        // Canvas Reset, Seasons & Countdown Banner Controller
+        // =========================================================================
+        let resetCountdownInterval = null;
+        let scheduledResetTimestamp = null;
+        let scheduledResetMsg = null;
+
+        function setResetPreset(hours) {
+            const timeInput = document.getElementById("mod-reset-time-input");
+            if (!timeInput) return;
+            const target = new Date(Date.now() + hours * 3600 * 1000);
+            timeInput.value = formatDateTimeLocal(target);
+        }
+
+        function formatDateTimeLocal(date) {
+            const pad = num => String(num).padStart(2, '0');
+            const YYYY = date.getFullYear();
+            const MM = pad(date.getMonth() + 1);
+            const DD = pad(date.getDate());
+            const hh = pad(date.getHours());
+            const mm = pad(date.getMinutes());
+            return `${YYYY}-${MM}-${DD}T${hh}:${mm}`;
+        }
+
+        async function renderResetTab() {
+            modContent.innerHTML = `<div style="text-align: center; color: #888; padding: 20px;">Loading canvas reset status...</div>`;
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/canvas/reset-status`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                let html = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 6px; padding: 10px 14px;">
+                        <div>
+                            <div style="font-size: 0.82em; color: #88bbcc;">Active Canvas Season:</div>
+                            <div style="font-size: 1.1em; font-weight: bold; color: #00E5FF;">#${data.currentSeasonNumber} (${escapeHtml(data.currentSeasonName)})</div>
+                        </div>
+                        <div style="font-size: 0.78em; color: #aaa; text-align: right;">
+                            Started: ${new Date(data.currentSeasonStartedAt).toLocaleDateString()} ${new Date(data.currentSeasonStartedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </div>
+                    </div>
+                `;
+
+                if (data.isResetScheduled && data.scheduledResetUtc) {
+                    const targetDate = new Date(data.scheduledResetUtc);
+                    html += `
+                        <div style="background: rgba(255, 152, 0, 0.08); border: 1px solid #FF9800; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="font-weight: bold; color: #FFA726; font-size: 1.05em; display: flex; align-items: center; gap: 6px;">
+                                    <span>⏳</span> Scheduled Reset Active
+                                </div>
+                                <span class="badge" style="background: #E65100; color: #fff; font-size: 0.75em; padding: 2px 6px; border-radius: 4px;">COUNTDOWN RUNNING</span>
+                            </div>
+                            <div style="font-size: 0.85em; color: #ccc;">
+                                <div>Target UTC: <strong style="color: #fff;">${targetDate.toUTCString()}</strong></div>
+                                <div>Scheduled By: <strong style="color: #00E5FF;">${escapeHtml(data.scheduledBy || "Admin")}</strong></div>
+                                ${data.message ? `<div style="margin-top: 4px;">Announcement: <em style="color: #FFE082;">"${escapeHtml(data.message)}"</em></div>` : ''}
+                            </div>
+                            <div style="font-family: monospace; font-size: 1.25em; font-weight: bold; color: #FFD54F; background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 4px; text-align: center; border: 1px solid rgba(255,152,0,0.3);">
+                                ⏳ <span id="mod-reset-countdown-display">Calculating...</span>
+                            </div>
+                            <button id="mod-cancel-reset-btn" class="btn" style="background: #441515; border-color: #882222; color: #ff8888; padding: 8px; font-weight: bold; margin-top: 6px;">
+                                ❌ Cancel Scheduled Reset
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid #444; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                            <div style="font-weight: bold; color: #FFB74D; font-size: 0.95em; display: flex; align-items: center; gap: 6px;">
+                                <span>📅</span> Schedule Season Reset & Canvas Wipe
+                            </div>
+                            <div style="font-size: 0.82em; color: #aaa;">
+                                Scheduling a reset will display a live countdown HUD banner to all painters. When the timer reaches zero, the global wall will be wiped cleanly to pure blank white (0x00), while all historical pixels are preserved in database archives.
+                            </div>
+
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label style="font-size: 0.8em; color: #bbb;">Target Date & Time (Local / UTC):</label>
+                                <input type="datetime-local" id="mod-reset-time-input" class="btn date-input" style="text-align: left; padding: 8px 10px;">
+                            </div>
+
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-size: 0.78em; color: #888; align-self: center;">Quick Presets:</span>
+                                <button type="button" class="btn preset-btn" onclick="setResetPreset(1)">+1 Hour</button>
+                                <button type="button" class="btn preset-btn" onclick="setResetPreset(6)">+6 Hours</button>
+                                <button type="button" class="btn preset-btn" onclick="setResetPreset(24)">+24 Hours</button>
+                                <button type="button" class="btn preset-btn" onclick="setResetPreset(168)">+7 Days</button>
+                            </div>
+
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label style="font-size: 0.8em; color: #bbb;">Announcement Banner Message (Optional):</label>
+                                <input type="text" id="mod-reset-msg-input" class="btn" placeholder="e.g. Season 1 Finale! Canvas wipes in 24 hours. Export art now!" style="text-align: left; padding: 8px 10px;">
+                            </div>
+
+                            <button id="mod-schedule-submit-btn" class="btn" style="background: #7a4500; border-color: #FF9800; color: #fff; padding: 10px; font-weight: bold; margin-top: 4px;">
+                                ⏳ Schedule Canvas Reset Countdown
+                            </button>
+                        </div>
+                    `;
+                }
+
+                // Danger zone immediate wipe
+                html += `
+                    <div style="border: 1px solid #772222; background: rgba(50, 10, 10, 0.35); border-radius: 8px; padding: 12px 14px; margin-top: 4px;">
+                        <div style="color: #FF5252; font-weight: bold; font-size: 0.9em; display: flex; align-items: center; gap: 6px;">
+                            <span>🚨</span> Danger Zone: Emergency Immediate Wipe
+                        </div>
+                        <div style="font-size: 0.8em; color: #bbb; margin: 4px 0 10px 0; line-height: 1.4;">
+                            Immediately clears the Global Wall to pure white without waiting for a countdown. Advances to Season #${data.currentSeasonNumber + 1}. All pixel placement history is preserved in SQL Server.
+                        </div>
+                        <button id="mod-immediate-wipe-btn" class="btn" style="background: #990000; border-color: #FF3333; color: #fff; font-weight: bold; padding: 8px 14px; font-size: 0.82em;">
+                            🚨 Execute Immediate Wipe Now
+                        </button>
+                    </div>
+                `;
+
+                modContent.innerHTML = html;
+
+                // Attach handlers
+                const cancelBtn = document.getElementById("mod-cancel-reset-btn");
+                if (cancelBtn) {
+                    cancelBtn.addEventListener("click", cancelScheduledReset);
+                }
+
+                const scheduleBtn = document.getElementById("mod-schedule-submit-btn");
+                if (scheduleBtn) {
+                    scheduleBtn.addEventListener("click", submitScheduleReset);
+                }
+
+                const wipeBtn = document.getElementById("mod-immediate-wipe-btn");
+                if (wipeBtn) {
+                    wipeBtn.addEventListener("click", executeImmediateWipe);
+                }
+
+                updateResetBannerUI();
+            } catch (err) {
+                modContent.innerHTML = `<div style="color: #FF5252; padding: 14px;">Failed to load reset status: ${err.message}</div>`;
+            }
+        }
+
+        async function submitScheduleReset() {
+            const timeInput = document.getElementById("mod-reset-time-input");
+            const msgInput = document.getElementById("mod-reset-msg-input");
+            if (!timeInput || !timeInput.value) {
+                alert("Please select a target date and time for the reset.");
+                return;
+            }
+
+            const targetDate = new Date(timeInput.value);
+            if (targetDate.getTime() <= Date.now()) {
+                alert("Scheduled reset time must be in the future.");
+                return;
+            }
+
+            const message = msgInput ? msgInput.value.trim() : "";
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/moderation/schedule-reset`, {
+                    method: "POST",
+                    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({
+                        scheduledResetUtc: targetDate.toISOString(),
+                        announcementMessage: message
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${res.status}`);
+                }
+                renderResetTab();
+            } catch (err) {
+                alert(`Error scheduling reset: ${err.message}`);
+            }
+        }
+
+        async function cancelScheduledReset() {
+            if (!confirm("Are you sure you want to cancel the scheduled canvas reset?")) return;
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/moderation/cancel-reset`, {
+                    method: "POST",
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                renderResetTab();
+            } catch (err) {
+                alert(`Error cancelling reset: ${err.message}`);
+            }
+        }
+
+        async function executeImmediateWipe() {
+            const reason = prompt("Type 'CONFIRM WIPE' to immediately wipe the Global Wall to white:", "");
+            if (reason !== "CONFIRM WIPE") {
+                if (reason !== null) alert("Confirmation phrase did not match. Wipe aborted.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/moderation/execute-reset-now`, {
+                    method: "POST",
+                    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({ reason: "Admin immediate wipe from moderation panel" })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${res.status}`);
+                }
+                alert("Canvas has been wiped cleanly to blank white!");
+                closeModModal();
+            } catch (err) {
+                alert(`Error executing immediate wipe: ${err.message}`);
+            }
+        }
+
+        function handleCanvasResetScheduled(data) {
+            scheduledResetTimestamp = new Date(data.scheduledResetUtc).getTime();
+            scheduledResetMsg = data.message || "";
+            startResetCountdown();
+            statusDiv.innerText = `⏳ Canvas Reset Scheduled for ${new Date(data.scheduledResetUtc).toLocaleTimeString()}`;
+            statusDiv.style.color = "#FFA726";
+            if (modModal && modModal.style.display === "flex") {
+                renderResetTab();
+            }
+        }
+
+        function handleCanvasResetCancelled(data) {
+            stopResetCountdown();
+            if (resetBanner) resetBanner.style.display = "none";
+            statusDiv.innerText = `Scheduled Canvas Reset was cancelled by ${data.cancelledBy || 'Admin'}.`;
+            statusDiv.style.color = "#00E5FF";
+            if (modModal && modModal.style.display === "flex") {
+                renderResetTab();
+            }
+        }
+
+        function handleCanvasResetExecuted(data) {
+            // 1. Stop and hide countdown banner
+            stopResetCountdown();
+            if (resetBanner) resetBanner.style.display = "none";
+
+            // 2. Play white clean-slate flash animation
+            const flash = document.getElementById("screen-wipe-flash");
+            if (flash) {
+                flash.classList.add("flash-active");
+                setTimeout(() => {
+                    flash.classList.remove("flash-active");
+                }, 100);
+            }
+
+            // 3. Clear all cached tiles
+            tileCache.clear();
+            tileLoadPromises.clear();
+
+            // 4. Wipe minimap
+            if (minimapCtx) {
+                minimapCtx.fillStyle = paletteColors[0] || "#FFFFFF";
+                minimapCtx.fillRect(0, 0, 160, 160);
+            }
+
+            // 5. Clear global wall reservations
+            activeReservations = activeReservations.filter(r => r.wallId != null);
+
+            // 6. Force immediate re-render
+            render();
+            renderMinimap();
+
+            // 7. Show toast / alert
+            const seasonMsg = `⚡ Global Wall Wiped! Started Season #${data.seasonNumber}: '${data.seasonName}'`;
+            statusDiv.innerText = seasonMsg;
+            statusDiv.style.color = "#FFD700";
+            console.log(seasonMsg);
+
+            if (modModal && modModal.style.display === "flex") {
+                renderResetTab();
+            }
+        }
+
+        function startResetCountdown() {
+            stopResetCountdown();
+            updateResetBannerUI();
+            resetCountdownInterval = setInterval(updateResetBannerUI, 1000);
+        }
+
+        function stopResetCountdown() {
+            if (resetCountdownInterval) {
+                clearInterval(resetCountdownInterval);
+                resetCountdownInterval = null;
+            }
+            scheduledResetTimestamp = null;
+        }
+
+        function updateResetBannerUI() {
+            if (!resetBanner) return;
+            if (!scheduledResetTimestamp) {
+                resetBanner.style.display = "none";
+                return;
+            }
+
+            const now = Date.now();
+            const diffSec = Math.max(0, Math.floor((scheduledResetTimestamp - now) / 1000));
+
+            if (diffSec <= 0) {
+                resetBannerTimer.innerText = "00h 00m 00s";
+                resetBanner.classList.add("imminent");
+                return;
+            }
+
+            resetBanner.style.display = "flex";
+            if (diffSec < 3600) {
+                resetBanner.classList.add("imminent");
+            } else {
+                resetBanner.classList.remove("imminent");
+            }
+
+            const hours = Math.floor(diffSec / 3600);
+            const minutes = Math.floor((diffSec % 3600) / 60);
+            const seconds = diffSec % 60;
+
+            let timeStr = "";
+            if (hours > 24) {
+                const days = Math.floor(hours / 24);
+                const remHours = hours % 24;
+                timeStr = `${days}d ${String(remHours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+            } else {
+                timeStr = `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+            }
+
+            resetBannerTimer.innerText = timeStr;
+            if (scheduledResetMsg) {
+                resetBannerMsg.innerText = scheduledResetMsg;
+                resetBannerMsg.title = scheduledResetMsg;
+                resetBannerMsg.style.display = "inline";
+            } else {
+                resetBannerMsg.style.display = "none";
+            }
+
+            const modTimerDisplay = document.getElementById("mod-reset-countdown-display");
+            if (modTimerDisplay) {
+                modTimerDisplay.innerText = timeStr;
+            }
+        }
+
+        async function fetchResetStatus() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/canvas/reset-status`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.isResetScheduled && data.scheduledResetUtc) {
+                    scheduledResetTimestamp = new Date(data.scheduledResetUtc).getTime();
+                    scheduledResetMsg = data.message || "";
+                    startResetCountdown();
+                }
+            } catch (err) {
+                console.warn("Failed to fetch canvas reset status:", err);
+            }
         }
 
         // Territory Reservation Modal Controllers
