@@ -1,0 +1,33 @@
+# Global Graffiti Wall - Production Caddy Configuration
+# Automatic SSL/TLS issuance and renewal via Let's Encrypt / ZeroSSL
+
+{
+    email {$ACME_EMAIL:admin@example.com}
+    admin off
+}
+
+{$DOMAIN_NAME:localhost} {
+    # Reverse proxy all web and WebSocket traffic to the ASP.NET Core API container
+    reverse_proxy api:8080 {
+        # Optimize for real-time WebSocket connections and streaming SignalR chunks
+        flush_interval -1
+        
+        # Real-IP forwarding headers (essential for shadow-banning and rate limiting)
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Production HTTP Security Headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    # High-Performance Transparent Compression
+    encode zstd gzip
+}

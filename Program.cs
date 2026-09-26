@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
 using GlobalGraffitiWall.API;
@@ -9,20 +10,43 @@ using GlobalGraffitiWall.API.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Enable CORS for local testing
+// 1. Enable CORS (support configurable production domain list with AllowAll fallback)
+var allowedOriginsConfig = builder.Configuration["Cors:AllowedOrigins"];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyHeader()
-              .AllowAnyMethod()
-              .SetIsOriginAllowed(_ => true)
-              .AllowCredentials();
+        if (!string.IsNullOrWhiteSpace(allowedOriginsConfig) && allowedOriginsConfig != "*")
+        {
+            var origins = allowedOriginsConfig.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            policy.WithOrigins(origins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .SetIsOriginAllowed(_ => true)
+                  .AllowCredentials();
+        }
     });
 });
 
 builder.Services.AddControllers();
-builder.Services.AddSignalR();
+
+// SignalR with optional Redis Backplane for horizontal scale-out
+var signalRBuilder = builder.Services.AddSignalR();
+string redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+var enableRedisBackplane = builder.Configuration.GetValue<bool>("CanvasSettings:EnableRedisBackplane");
+if (enableRedisBackplane)
+{
+    signalRBuilder.AddStackExchangeRedis(redisConnectionString, options =>
+    {
+        options.Configuration.ChannelPrefix = RedisChannel.Literal("GraffitiWall");
+    });
+}
 
 // JWT Authentication
 var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? "GlobalGraffitiWall_SuperSecretKey_ForSigningTokens_2026!#*CustomJwtKey789";
@@ -60,7 +84,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // Redis
-string redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(redisConnectionString));
 
@@ -84,6 +107,15 @@ builder.Services.AddHostedService<ReservationExpirationService>();
 builder.Services.AddHostedService<CanvasResetWorkerService>();
 
 var app = builder.Build();
+
+// Enable Forwarded Headers for reverse proxies (Caddy, Nginx, Cloudflare)
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 app.UseCors("AllowAll");
 app.UseAuthentication();

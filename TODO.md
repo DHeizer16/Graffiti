@@ -260,7 +260,7 @@ This document tracks planned development phases and architecture enhancements fo
 ---
 
 ## 8. Live Public Deployment & Production Hosting Guide (Going Live Online)
-- [ ] **Public Production Hosting & Deployment Runbook (`DEPLOYMENT.md`)**:
+- [x] **Public Production Hosting & Deployment Runbook (`DEPLOYMENT.md`)**:
   - **Cloud Hosting & Infrastructure Strategy**:
     - **Option A (Recommended & Cost-Effective: Single-Node VPS)**: Deploy via Docker Compose on a $5–$15/mo Linux VPS (Hetzner, DigitalOcean Droplet, Linode, AWS EC2 t4g, or Azure B2s) with 2–4 GB RAM.
     - **Option B (Fully Managed Cloud / Serverless)**: Azure Container Apps or AWS ECS with Azure SQL Database / Amazon RDS and Azure Cache for Redis.

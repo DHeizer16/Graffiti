@@ -101,6 +101,7 @@ The in-memory `PaletteService` caches and periodically refreshes the active pale
 ### 4. Moderation & Anti-Abuse
 - **Shadow Banning Engine**: Placements by banned IPs/users are silently isolated into SQL with `is_shadow_banned = 1`, bypassing Redis mutation and public broadcasts.
 - **Role-Based Access Control (RBAC)**: `User`, `Moderator`, and `Admin` roles with administrative role management endpoints (`POST /api/moderation/set-role`).
+- **Scheduled Global Wall Resets & Seasons**: Admin-scheduled countdowns, live top banners, broadcast toasts, automatic whiteout clean-slate wipes, and historical season archiving for Time-Lapse Replay.
 
 ### 5. Time-Lapse & Replay
 - High-speed delta timeline scrubber (`/api/history/deltas`) with variable playback speeds (1 min/s to 1 day/s) and dual start/end time pickers.
@@ -209,9 +210,21 @@ dotnet run
 Navigate to `http://localhost:5217` in your browser.
 
 #### Running Tests
-The repository includes a comprehensive 104-test xUnit suite covering coordinate math, token-bucket rate limiting, bonus tokens, spatial collision algorithms, cryptographic security, and palette validation:
+The repository includes a comprehensive 114-test xUnit suite covering coordinate math, token-bucket rate limiting, bonus tokens, spatial collision algorithms, cryptographic security, PNG encoding, and palette validation:
 
 ```bash
 # Run all automated unit tests
 dotnet test GlobalGraffitiWall.sln
 ```
+
+---
+
+## Production Deployment & Public Hosting
+
+Global Graffiti Wall includes a full production orchestration stack featuring:
+- **Automatic Let's Encrypt SSL/TLS** via [Caddy](https://caddyserver.com/) edge reverse proxy (`docker-compose.prod.yml`).
+- **Internal Security Lockdown**: SQL Server and Redis ports are isolated from public ingress.
+- **SignalR Redis Backplane**: Supports multi-instance horizontal scale-out for massive live audience events.
+- **Kernel Tuning & Cloudflare DDoS Shield**: Engineered to handle 5,000+ simultaneous painters.
+
+👉 **Complete Step-by-Step Runbook**: See [DEPLOYMENT.md](DEPLOYMENT.md) for full server provisioning, UFW firewall, daily automated backups, and Cloudflare configuration.

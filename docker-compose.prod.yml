@@ -1,0 +1,138 @@
+# ==============================================================================
+# Global Graffiti Wall - Production Docker Compose Orchestration
+# Run with: docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Edge Reverse Proxy & SSL (Caddy with Auto Let's Encrypt HTTPS)
+  # ----------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: graffiti-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC)
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - graffiti-net
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------------------
+  # 2. ASP.NET Core 9 Canvas API & SignalR Service
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: graffiti-api
+    restart: unless-stopped
+    # Note: No host ports exposed directly. All ingress routes through Caddy on 80/443.
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__SqlServerConnection: "Server=sqlserver,1433;Database=Graffiti;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      ConnectionStrings__Redis: "redis:6379"
+      JwtSettings__Secret: "${JWT_SECRET}"
+      JwtSettings__Issuer: "${JWT_ISSUER:-GlobalGraffitiWall}"
+      JwtSettings__Audience: "${JWT_AUDIENCE:-GlobalGraffitiWallClient}"
+      CanvasSettings__MaxCapacity: "${CANVAS_MAX_CAPACITY:-16}"
+      CanvasSettings__RefillRatePerSecond: "${CANVAS_REFILL_RATE:-0.2}"
+      CanvasSettings__EnableRedisBackplane: "${ENABLE_REDIS_BACKPLANE:-true}"
+      Cors__AllowedOrigins: "${CORS_ALLOWED_ORIGINS:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+      migration-runner:
+        condition: service_completed_successfully
+    networks:
+      - graffiti-net
+
+  # ----------------------------------------------------------------------------
+  # 3. Redis 7 In-Memory Buffer & SignalR Pub/Sub Backplane
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: graffiti-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    # Protected: Redis port 6379 is NOT exposed to public internet
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - graffiti-net
+
+  # ----------------------------------------------------------------------------
+  # 4. SQL Server 2022 Database Engine
+  # ----------------------------------------------------------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: graffiti-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+      MSSQL_PID: "Express"
+    # Protected: SQL port 1433 is NOT exposed to public internet
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 25
+      start_period: 20s
+    networks:
+      - graffiti-net
+
+  # ----------------------------------------------------------------------------
+  # 5. Automated Database Migration Runner
+  # ----------------------------------------------------------------------------
+  migration-runner:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: graffiti-migrations
+    restart: "no"
+    environment:
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+      SQL_HOST: "sqlserver"
+      SQL_USER: "sa"
+    volumes:
+      - ./Scripts:/scripts:ro
+      - ./entrypoint-migrations.sh:/entrypoint-migrations.sh:ro
+    command: ["bash", "-c", "sed -i 's/\r$$//' /entrypoint-migrations.sh && /bin/bash /entrypoint-migrations.sh"]
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - graffiti-net
+
+volumes:
+  redis_data:
+  mssql_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  graffiti-net:
+    driver: bridge
