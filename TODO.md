@@ -109,7 +109,7 @@ This document tracks planned development phases and architecture enhancements fo
 
 ---
 
-## 3. Moderation & Anti-Abuse
+## 3. Moderation, Anti-Abuse & Scheduled Global Wall Resets
 - [x] **Shadow Banning Engine**:
   - Implemented `ModerationService.cs` with $O(1)$ Redis sets (`canvas:shadow_banned:ips`, `canvas:shadow_banned:users`) synchronized with SQL Server `shadow_bans` table (schema preserved in `Scripts/001_create_shadow_bans.sql` with index on identifier).
   - Containment in `CanvasHub.PlacePixel`: Banned users/IPs receive normal success responses and local connection echo (`Clients.Caller.SendAsync("PixelUpdated", ...)`), but shared Redis buffer mutation and public `Clients.All` broadcasts are bypassed.
@@ -121,6 +121,39 @@ This document tracks planned development phases and architecture enhancements fo
   - Automatic Admin Seeding: Green-field registrations auto-promote the 1st registered user (`userCount == 0`) to `Admin`. Existing databases auto-promote the earliest registered user in `EnsureUserSchemaAsync()`.
   - Authenticated Caller Identity: The `bannedBy` audit trail in `ShadowBanAsync` automatically resolves from caller JWT claims (`User.FindFirstValue(ClaimTypes.Name)`).
   - Frontend UI Lockdown: The `[🛡️ Mod]` HUD button and Inspector `[🚨 Shadow Ban]` button are completely hidden by default and only rendered for authenticated users with `Admin` or `Moderator` roles. Unauthorized hotkeys (`Shift + M`) are rejected with an access-denied alert. All moderation fetches attach JWT bearer tokens via `getAuthHeaders()`.
+- [ ] **Scheduled Global Wall Reset & Wipe (Admin Countdown & Clean Slate)**:
+  - **Definition & Purpose**:
+    - Complete clean slate wipe of the primary Global Wall back to pure blank white (`0x00` / Color ID 0).
+    - Allows the community canvas to run in "Seasons" or periodic events (similar to the r/place finale whiteout), giving players a fresh blank canvas to create new art.
+    - Historical pixel placements in SQL Server are archived (tagged with `season_id` or timestamp epoch) so past seasons remain fully viewable and scrubbable in Time-Lapse Replay mode.
+  - **Admin Scheduling & Timed Countdown Architecture**:
+    - **Schedule Reset Endpoint (`POST /api/moderation/schedule-reset`)**:
+      - Restricted strictly to `[Authorize(Roles = "Admin")]`.
+      - Admin specifies a future UTC timestamp (`scheduledResetUtc`) and an optional announcement banner message (e.g. *"Season 1 Finale! Canvas wipes to white in 24 hours. Export your art now!"*).
+    - **Cancellation Endpoint (`POST /api/moderation/cancel-reset`)**:
+      - Allows administrators to abort or reschedule a pending wipe countdown.
+    - **Public Status Endpoint (`GET /api/canvas/reset-status`)**:
+      - Returns current status: `{ isResetScheduled: true, scheduledResetUtc: "2026-10-01T00:00:00Z", remainingSeconds: 86400, message: "..." }`.
+    - **Real-Time SignalR Synchronization**:
+      - Broadcasts `CanvasResetScheduled` event to all connected clients when a wipe is scheduled or modified.
+      - Broadcasts `CanvasResetCancelled` event if an admin cancels the countdown.
+      - Broadcasts `CanvasResetExecuted` when the timer hits zero, triggering an instantaneous clean-slate visual re-render across all open browser tabs without requiring a page refresh.
+  - **Automated Reset Execution Worker (`CanvasResetWorkerService`)**:
+    - Background hosted service that monitors the scheduled reset timestamp.
+    - At $T = 0$:
+      1. **Atomic Redis Buffer Wipe**: Overwrites the 100 MB `canvas:global_state` buffer with zeroes (`0x00`) in row-major chunks, immediately returning all 100,000,000 pixels to pure white.
+      2. **Minimap Reset**: Zeroes out the 25.6 KB `canvas:minimap_overview` buffer.
+      3. **Territory Reservation Auto-Release**: Archives and deactivates all active territory reservations (`is_active = 0`) on the Global Wall.
+      4. **Season Increment**: Advances the canvas season epoch (`canvas:global_season_id`) in Redis and SQL.
+      5. **SignalR Broadcast**: Fires `CanvasResetExecuted` to all connected clients.
+  - **Frontend Cyberpunk Countdown HUD & Admin Controls**:
+    - **Global Countdown Banner**: Top HUD banner displaying a pulsating neon countdown timer (`⏳ GLOBAL WALL RESET IN: 04h 22m 15s`) with dynamic warning urgency (amber when $< 24\text{h}$, flashing red when $< 1\text{h}$).
+    - **Moderation Modal Admin Tab (`#mod-modal`)**:
+      - New **"Canvas Reset"** tab visible only to Admins.
+      - Date/Time picker with convenient quick-select presets (+1 Hour, +6 Hours, +24 Hours, +7 Days).
+      - Custom announcement message input.
+      - Emergency immediate wipe button with double-confirmation prompt.
+    - **Instant Visual Clean-Slate Flash**: On wipe execution, displays a brief retro screen flash, evicts local client LRU tile caches (`tileCache.clear()`), wipes the offscreen minimap canvas, and re-renders a fresh, pristine white canvas ready for the next era.
 
 
 ---
